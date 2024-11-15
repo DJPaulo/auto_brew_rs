@@ -3,15 +3,16 @@
 
 use defmt::*;
 use embassy_executor::Spawner;
-use embedded_hal::digital::OutputPin;
+//use embedded_hal::digital::OutputPin;
 use embassy_rp::gpio::{Level, Output};
 //use embassy_rp::peripherals::DMA_CH0;
 use embassy_rp::spi::{Config, Phase, Polarity, Spi};
 use embassy_time::{Duration, Timer, Delay};
-use display_interface::{DisplayError, WriteOnlyDataCommand};
-use display_interface_spi::SPIInterface;
+use embedded_hal_async::delay::DelayNs;
+//use display_interface::{DisplayError, WriteOnlyDataCommand};
+//use display_interface_spi::SPIInterface;
 //use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{Line, PrimitiveStyle};
+//use embedded_graphics::primitives::{Line, PrimitiveStyle};
 //use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
 //use embedded_graphics::text::Text;
 //use gpio::{Level, Output};
@@ -62,9 +63,17 @@ async fn main(_spawner: Spawner) {
 
     let spi = Spi::new_txonly(peripherals.SPI1, sclk, mosi, peripherals.DMA_CH0, spi_config);
     
-    let mut display = sh1107::SH1107::new(spi, dc, rst);
+    let mut display = sh1107::SH1107::new(spi, dc, rst, cs);
 
-    display.init(&mut delay).await;
+    let _ = display.init(&mut delay).await;
+    delay.delay_ms(500).await;
+    let _ = display.clear().await;
 
+    let _ = display.draw_rectangle(&mut delay, Point::new(0, 0), Size::new(50, 10), BinaryColor::On).await;
+    //let _ = display.show(&mut delay).await;
+    delay.delay_ms(2000).await;
 
+    //let _ = display.clear().await;
+    
+    info!("Program end");
 }
