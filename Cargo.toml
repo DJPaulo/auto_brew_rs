@@ -14,8 +14,10 @@ display-interface = "^ 0.5"
 display-interface-spi = "0.5.0"
 display-interface-i2c = "0.5.0"
 embedded-graphics = { version = "0.8.1" }
-#embedded-graphics-framebuf = { version = "0.5.0" }
+embedded-graphics-framebuf = { version = "0.5.0" }
 #embedded-graphics-core = { version = "0.4.0", optional = true}
+#oled_async = { version = "0.1.0-alpha1" }
+#sh1107 = { version = "0.1.0" }
 
 # Low-level access to Cortex-M processors
 cortex-m = { version = "0.7.7", features = ["inline-asm", "critical-section"]}

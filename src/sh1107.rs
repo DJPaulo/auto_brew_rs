@@ -49,11 +49,11 @@ where
             0x00, // Set lower column address
             0x10, // Set higher column address
             0xB0, // Set page address
-            //0xDC, // Set display start line
-            0x40, // Set display start line
+            0xDC, 0x00, // Set display start line
+            //0x40, // Set display start line
             0x81, // Set contrast control
             0x6F, // 128
-            0x21, // Set memory addressing mode (0x20/0x21)
+            0x21, // Set memory addressing mode (0x20 = Horizontal / 0x21 = Vertical)
             0xA0, // Set segment remap
             0xC0, // Set COM output scan direction
             0xA4, // Disable entire display on (0xA4 = false / 0xA5 = true)
@@ -99,29 +99,49 @@ where
     }
 
     async fn show(&mut self, data: &[u8]) -> Result<(), DisplayError> {
-        self.send_data(&[0xB0]).await?; // Set page address
-        for page in 0..(Self::HEIGHT / 8) {     // 8 pixels per page
+        self.send_commands(&[0xB0]).await?; // Set page address
+        for page in 0..64 {     // 16 pages
             let column = (Self::HEIGHT - 1) - page;
             self.send_commands(&[0x00 + (column & 0x0f)]).await?;
             self.send_commands(&[0x10 + (column >> 4)]).await?;
-            for num in 0..(Self::HEIGHT / 4) {
-                let index = (page * (Self::HEIGHT / 4)) + num;
+            //self.send_commands(&[(0x00 + (column as u8 & 0x0F) as u8), (0x10 + (column as u8 >> 4) as u8)]).await?;
+            for num in 0..16 { //(Self::HEIGHT / 4) {
+                let index = (page as usize * 16 as usize) + num;
                 self.send_data(&[data[index as usize]]).await?;
             }
         }
         Ok(())
     }
+
+
+/*
+    async fn show(&mut self, data: &[u8]) -> Result<(), DisplayError> {
+        let row_bytes = (Self::WIDTH / 8);
+        let pages = (Self::HEIGHT);
+        self.send_commands(&[0xB0]).await?; // Set page address
+        let mut column = pages - 1;
+
+        for page in 0..pages {
+            column = column - page;
+            self.send_commands(&[(0x00 + (column as u8 & 0x0F) as u8), (0x10 + (column as u8 >> 4) as u8)]).await?;
+
+            for num in 0..row_bytes {
+                self.send_data(&[data[((page * row_bytes) + num) as usize]]).await?;
+            }
+        }
+        Ok(())
+    }
+*/
     
 
     pub async fn clear(&mut self) -> Result<(), DisplayError> {
         let data = [0x00; ((Self::WIDTH as usize * Self::HEIGHT as usize) / 8) as usize];
-        self.send_data(&data).await?;
         self.show(&data).await;
         Ok(())
     }
 
     pub async fn draw_rectangle<D: DelayNs>(&mut self, delay: &mut D, top_left: Point, bottom_right: Size, colour: BinaryColor) -> Result<(), DisplayError> {
-        let style = PrimitiveStyleBuilder::new().stroke_color(colour).stroke_width(1).build();
+        let style = PrimitiveStyleBuilder::new().stroke_color(colour).stroke_width(2).build();
         let rectangle = Rectangle::new(top_left, bottom_right).into_styled(style);
         let mut data = [0x00; ((Self::WIDTH as usize * Self::HEIGHT as usize) / 8) as usize];
         for Pixel(point, colour) in rectangle.pixels() { 
