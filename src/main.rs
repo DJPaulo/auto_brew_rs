@@ -14,19 +14,16 @@ use embedded_hal_async::spi::{SpiBus, SpiDevice};
 //use oled_async::{prelude::*, Builder};
 use display_interface::{DisplayError, AsyncWriteOnlyDataCommand };
 use display_interface_spi::SPIInterface;
-//use embedded_graphics::prelude::*;
+use embedded_graphics::prelude::*;
 //use embedded_graphics::primitives::{Line, PrimitiveStyle};
-//use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
-//use embedded_graphics::text::Text;
+use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
+use embedded_graphics::text::{Text, TextStyleBuilder};
+use embedded_graphics::pixelcolor::BinaryColor;
+use embedded_hal_bus::spi::ExclusiveDevice;
 //use gpio::{Level, Output};
 use {defmt_rtt as _, panic_probe as _};
 
-use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
-    pixelcolor::BinaryColor,
-    prelude::*,
-    text::{Baseline, Text},
-};
+
 
 //use oled_async::{prelude::*, Builder};
 
@@ -50,35 +47,47 @@ async fn main(_spawner: Spawner) {
     info!("Program start");
     let peripherals = embassy_rp::init(Default::default());
     let mut delay = Delay;
+    let mut del = Delay;
 
       
     let dc = Output::new(peripherals.PIN_8, Level::Low);     // Data/Command
-    let cs = Output::new(peripherals.PIN_9, Level::Low);     // Chip Select
+    let cs = Output::new(peripherals.PIN_9, Level::High);    // Chip Select
     let sclk = peripherals.PIN_10;                                      // Serial Clock
     let mosi = peripherals.PIN_11;                                      // Master Out Slave In
     let rst = Output::new(peripherals.PIN_12, Level::Low);  // Reset
     
 
     let mut spi_config = Config::default();
-    spi_config.frequency = 2_000_000;  //sh1107::frequency();
+    spi_config.frequency = 2_000_000;
     spi_config.phase = Phase::CaptureOnSecondTransition;
     spi_config.polarity = Polarity::IdleHigh;
 
 
     let spi = Spi::new_txonly(peripherals.SPI1, sclk, mosi, peripherals.DMA_CH0, spi_config);
+    let mut spi_device = ExclusiveDevice::new(spi, cs, del).unwrap();
 
         
-    let mut display = sh1107::SH1107::new(spi, dc, rst, cs);
+    let mut display = sh1107::SH1107::new(&mut spi_device, dc, rst); //, cs);
     
     let _ = display.init(&mut delay).await;
     delay.delay_ms(2000).await;
 
     let _ = display.clear().await;
 
-    let _ = display.draw_rectangle(&mut delay, Point::new(1, 1), Size::new(126, 62), BinaryColor::On).await;
+    let _ = display.draw_rectangle(Point::new(0, 0), Size::new(128, 64), BinaryColor::On, false).await;
     delay.delay_ms(4000).await;
 
-    //let _ = display.clear().await;
+    let _ = display.draw_text("Hello Rust!", Point::new(10, 10), BinaryColor::On).await;
+
+    //let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+    //Text::new("Hello Rust!", Point::new(10, 10), style)
+    //    .draw(&mut display)
+    //    .unwrap();
+
+    
+
+
+    delay.delay_ms(4000).await;
     
     info!("Program end");
 }
