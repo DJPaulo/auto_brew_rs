@@ -1,23 +1,14 @@
-use embassy_embedded_hal::shared_bus::asynch::spi;
 use embedded_hal::spi::SpiDevice;
-//use embedded_graphics::text::renderer::CharacterStyle;
-//use embedded_graphics::text::Text;
-//use embedded_graphics::framebuffer::Framebuffer;
-use embedded_hal_async::spi::SpiBus;
 use embedded_hal_async::delay::DelayNs;
-use embedded_hal::digital::{ErrorType, OutputPin};
+use embedded_hal::digital::OutputPin;
 use display_interface::{DisplayError, AsyncWriteOnlyDataCommand, DataFormat};
 //use display_interface_spi::SPIInterface;
 //use display_interface_i2c::I2CInterface;
 use embedded_graphics::prelude::*;
 use embedded_graphics::pixelcolor::BinaryColor;
-use embedded_graphics::primitives::{Line, Rectangle, PrimitiveStyleBuilder};
-use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
-use embedded_graphics::text::{Text, TextStyleBuilder};
-//use embedded_graphics::text::Text;
-//use embedded_graphics_framebuf::{FrameBuf, PixelIterator};
-//use embedded_graphics::draw_target::
-
+use embedded_graphics::primitives::{Rectangle, PrimitiveStyleBuilder};
+use embedded_graphics::mono_font::{ascii::FONT_8X13, MonoTextStyle};
+use embedded_graphics::text::Text;
 
 
 #[derive(Debug, Clone, Copy)]
@@ -25,9 +16,6 @@ pub struct SH1107<SPI, DC, RESET> {
     spi: SPI,
     dc: DC,
     rst: RESET,
-    //cs: CS,
-    //width: u8,
-    //height: u8,
     buffer: [u8; BUFFER_SIZE],
 }
 
@@ -40,7 +28,6 @@ where
     SPI: SpiDevice,
     DC: OutputPin<Error = core::convert::Infallible>,
     RESET: OutputPin<Error = core::convert::Infallible>,
-    //CS: OutputPin<Error = core::convert::Infallible>,
 {
 
     pub fn new(spi: SPI, dc: DC, rst: RESET) -> Self {
@@ -48,8 +35,6 @@ where
             spi,
             dc,
             rst,
-            //width: WIDTH,
-            //height: HEIGHT,
             buffer: [0; BUFFER_SIZE],
          }
     }
@@ -79,11 +64,11 @@ where
     }
 
     async fn reset<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), DisplayError> {
-        self.rst.set_high().map_err(|_| DisplayError::BusWriteError)?;
+        self.rst.set_high().map_err(|_| DisplayError::RSError)?;
         delay.delay_ms(1).await;
-        self.rst.set_low().map_err(|_| DisplayError::BusWriteError)?;
+        self.rst.set_low().map_err(|_| DisplayError::RSError)?;
         delay.delay_ms(10).await;
-        self.rst.set_high().map_err(|_| DisplayError::BusWriteError)?;
+        self.rst.set_high().map_err(|_| DisplayError::RSError)?;
         Ok(())
     }
 
@@ -100,40 +85,24 @@ where
     }
     
     async fn send_commands(&mut self, commands: &[u8]) -> Result<(), DisplayError> {
-        //self.cs.set_high().map_err(|_| DisplayError::BusWriteError)?;
-        self.dc.set_low().map_err(|_| DisplayError::BusWriteError)?;
-        //self.cs.set_low().map_err(|_| DisplayError::BusWriteError)?;
+        //self.cs.set_high().map_err(|_| DisplayError::CSError)?;
+        self.dc.set_low().map_err(|_| DisplayError::DCError)?;
+        //self.cs.set_low().map_err(|_| DisplayError::CSError)?;
         self.spi.write(commands).map_err(|_| DisplayError::BusWriteError)?;
-        //self.cs.set_high().map_err(|_| DisplayError::BusWriteError)?;
+        //self.cs.set_high().map_err(|_| DisplayError::CSError)?;
         Ok(())
     }
 
     async fn send_data(&mut self, data: &[u8]) -> Result<(), DisplayError> {
-        //self.cs.set_high().map_err(|_| DisplayError::BusWriteError)?;
-        self.dc.set_high().map_err(|_| DisplayError::BusWriteError)?;
-        //self.cs.set_low().map_err(|_| DisplayError::BusWriteError)?;
+        //self.cs.set_high().map_err(|_| DisplayError::CSError)?;
+        self.dc.set_high().map_err(|_| DisplayError::DCError)?;
+        //self.cs.set_low().map_err(|_| DisplayError::CSError)?;
         self.spi.write(data).map_err(|_| DisplayError::BusWriteError)?;
-        //self.cs.set_high().map_err(|_| DisplayError::BusWriteError)?;
+        //self.cs.set_high().map_err(|_| DisplayError::CSError)?;
         Ok(())
     }
 
-    /*
-    async fn show(&mut self, data: &[u8]) -> Result<(), DisplayError> {
-        self.send_commands(&[0xB0]).await?; // Set page address
-        for page in 0..64 {     // 64 rows
-            let column = (HEIGHT - 1) - page;
-            self.send_commands(&[0x00 + (column & 0x0f)]).await?;
-            self.send_commands(&[0x10 + (column >> 4)]).await?;
-            for num in 0..16 { // 16 pages of 8 bit each
-                let index = (page as usize * 16 as usize) + num;
-                self.send_data(&[data[index as usize]]).await?;
-            }
-        }
-        Ok(())
-    }
-    */
-
-    async fn show(&mut self) -> Result<(), DisplayError> {
+    pub async fn show(&mut self) -> Result<(), DisplayError> {
         self.send_commands(&[0xB0]).await?; // Set page address
         for page in 0..64 {     // 64 rows
             let column = (HEIGHT - 1) - page;
@@ -148,12 +117,7 @@ where
     }
 
     pub async fn clear(&mut self) -> Result<(), DisplayError> {
-        //let data = [0x00; ((WIDTH as usize * HEIGHT as usize) / 8) as usize];
-        for byte in self.buffer.iter_mut() {
-            *byte = 0x00;
-        }
-        //self.show(&self.buffer).await?;
-        self.show().await?;
+        self.buffer.fill(0x00);
         Ok(())
     }
 
@@ -164,45 +128,28 @@ where
             PrimitiveStyleBuilder::new().stroke_color(colour).stroke_width(1).build()
         };
         let rectangle = Rectangle::new(top_left, bottom_right).into_styled(style);
-        //let mut data = [0x00; ((WIDTH as usize * HEIGHT as usize) / 8) as usize];
-        for Pixel(point, colour) in rectangle.pixels() { 
+        rectangle.draw(self)?;
+        
+        /*for Pixel(point, colour) in rectangle.pixels() { 
             let Point { x, y } = point;
             if x >= 0 && x < WIDTH as i32 && y >= 0 && y < HEIGHT as i32 { 
                 let index = (y as usize * WIDTH as usize + x as usize) / 8;
                 if colour == BinaryColor::On {
-                    //data[index] |= 1 << (x % 8);
                     self.buffer[index] |= 1 << (x % 8);
                 } else { 
-                    //data[index] &= !(1 << (x % 8));
                     self.buffer[index] &= !(1 << (x % 8));
                 }
             }
-        }
-        //self.show(&data).await?;
-        self.show().await?;
+        }*/
         Ok(())
     }
 
     pub async fn draw_text(&mut self, text: &str, top_left: Point, colour: BinaryColor) -> Result<(), DisplayError> {
-        let style = MonoTextStyle::new(&FONT_6X10, colour);
+        let style = MonoTextStyle::new(&FONT_8X13, colour);
         let txt = Text::new(&text, top_left, style);
         txt.draw(self)?;
-        //let mut data = [0x00; ((self.width as usize * self.height as usize) / 8) as usize];
-       /* for Pixel(point, colour) in txt.pixels() { 
-            let Point { x, y } = point;
-            if x >= 0 && x < Self::WIDTH as i32 && y >= 0 && y < Self::HEIGHT as i32 { 
-                let index = (y as usize * Self::WIDTH as usize + x as usize) / 8;
-                if colour == BinaryColor::On {
-                    data[index] |= 1 << (x % 8);
-                } else { 
-                    data[index] &= !(1 << (x % 8));
-                }
-            }
-        } */
-        self.show().await?;
         Ok(())
     }
-
 
 
 }
@@ -221,7 +168,6 @@ where
     where
         I: IntoIterator<Item = Pixel<Self::Color>>,
     {
-        //let mut data = [0u8; 128 * 64 / 8];
         for Pixel(coord, colour) in pixels {
             let (x, y) = (coord.x, coord.y);
             if x >= 0 && x < WIDTH as i32 && y >= 0 && y < HEIGHT as i32 { 
@@ -246,8 +192,6 @@ where
         }
         Ok(())
     }
-
-
 }
 
 impl<SPI, DC, RST> Dimensions for SH1107<SPI, DC, RST> {
@@ -255,42 +199,3 @@ impl<SPI, DC, RST> Dimensions for SH1107<SPI, DC, RST> {
         Rectangle::new(Point::zero(), Size::new(128, 64))
     }
 }
-
-
-
-/*
-impl<SPI, DC, RESET, CS> DrawTarget for SH1107<SPI, DC, RESET, CS>
-where
-    SPI: embedded_hal_async::spi::SpiDevice,
-    DC: OutputPin<Error = core::convert::Infallible>,
-    RESET: OutputPin<Error = core::convert::Infallible>,
-    CS: OutputPin<Error = core::convert::Infallible>,
-{
-    type Color = BinaryColor;
-    type Error = core::convert::Infallible;
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Pixel<Self::Color>>,
-    {
-        // Draw pixels implementation
-        Ok(())
-    }
-}
-
-impl<SPI, DC, RESET, CS> Dimensions for SH1107<SPI, DC, RESET, CS>
-where
-    SPI: embedded_hal_async::spi::SpiDevice,
-    DC: OutputPin<Error = core::convert::Infallible>,
-    RESET: OutputPin<Error = core::convert::Infallible>,
-    CS: OutputPin<Error = core::convert::Infallible>,
-{
-    fn size(&self) -> Size {
-        Size::new(128, 64)
-    }
-
-    fn bounding_box(&self) -> Rectangle {
-        todo!()
-    }
-}
-*/

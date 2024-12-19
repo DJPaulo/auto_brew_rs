@@ -14,6 +14,7 @@ use embedded_hal_async::spi::{SpiBus, SpiDevice};
 //use oled_async::{prelude::*, Builder};
 use display_interface::{DisplayError, AsyncWriteOnlyDataCommand };
 use display_interface_spi::SPIInterface;
+//use display_interface_spi::SPIInterface;
 use embedded_graphics::prelude::*;
 //use embedded_graphics::primitives::{Line, PrimitiveStyle};
 use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
@@ -24,15 +25,10 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use {defmt_rtt as _, panic_probe as _};
 
 
-
-//use oled_async::{prelude::*, Builder};
-
-use auto_brew_rs::{adjustment, controls, sensor, sh1107};
+use auto_brew_rs::{adjustment, controls, sensor, sh1107 as sh1107};
 
 
 
-//mod display_driver;
-//use crate::display_driver::{displays, mode, builder};
 
 
 #[cortex_m_rt::pre_init]
@@ -65,29 +61,38 @@ async fn main(_spawner: Spawner) {
 
     let spi = Spi::new_txonly(peripherals.SPI1, sclk, mosi, peripherals.DMA_CH0, spi_config);
     let mut spi_device = ExclusiveDevice::new(spi, cs, del).unwrap();
-
         
-    let mut display = sh1107::SH1107::new(&mut spi_device, dc, rst); //, cs);
+    let mut display = sh1107::SH1107::new(&mut spi_device, dc, rst);
+
+    // Create the display interface
+    //let interface = SPIInterface::new(spi_device, dc);
+    //let mut display = sh1107::SH1107::new(interface, rst);
+
     
     let _ = display.init(&mut delay).await;
-    delay.delay_ms(2000).await;
+    delay.delay_ms(1000).await;
 
     let _ = display.clear().await;
+    display.show().await;
 
     let _ = display.draw_rectangle(Point::new(0, 0), Size::new(128, 64), BinaryColor::On, false).await;
-    delay.delay_ms(4000).await;
+    //display.show().await;
+    //delay.delay_ms(4000).await;
 
-    let _ = display.draw_text("Hello Rust!", Point::new(10, 10), BinaryColor::On).await;
+    let _ = display.draw_text("   AutoBrew rs ", Point::new(0, 22), BinaryColor::On).await;
+    let _ = display.draw_text("     v0.1.0    ", Point::new(0, 40), BinaryColor::On).await;
+    delay.delay_ms(10).await;
+    display.show().await;
+    delay.delay_ms(5000).await;
+    display.clear().await;
+    display.show().await;
+    delay.delay_ms(10).await;
 
-    //let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-    //Text::new("Hello Rust!", Point::new(10, 10), style)
-    //    .draw(&mut display)
-    //    .unwrap();
-
-    
 
 
-    delay.delay_ms(4000).await;
+
+
     
     info!("Program end");
 }
+
