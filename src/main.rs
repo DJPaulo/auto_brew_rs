@@ -6,12 +6,12 @@ use defmt::*;
 use embassy_executor::Spawner;
 //use embedded_hal::digital::OutputPin;
 use embassy_rp::gpio::{Level, Output};
-//use embassy_rp::peripherals::DMA_CH0;
+use embassy_rp::interrupt;
 use embassy_rp::spi::{Config, Phase, Polarity, Spi};
 use embassy_time::{Duration, Timer, Delay};
 use embedded_hal_async::delay::DelayNs;
 use embedded_hal_async::spi::{SpiBus, SpiDevice};
-//use oled_async::{prelude::*, Builder};
+//use embassy_embedded_hal;
 use display_interface::{DisplayError, AsyncWriteOnlyDataCommand };
 use display_interface_spi::SPIInterface;
 //use display_interface_spi::SPIInterface;
@@ -24,19 +24,15 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 //use gpio::{Level, Output};
 use {defmt_rtt as _, panic_probe as _};
 
-
 use auto_brew_rs::{adjustment, controls, sensor, sh1107 as sh1107};
 
 
-
-
-
-#[cortex_m_rt::pre_init]
-unsafe fn before_main() {
+//#[cortex_m_rt::pre_init]
+//unsafe fn before_main() {
     // Soft-reset doesn't clear spinlocks. Clear the one used by critical-section
     // before we hit main to avoid deadlocks when using a debugger
-    embassy_rp::pac::SIO.spinlock(31).write_value(1);
-}
+//    embassy_rp::pac::SIO.spinlock(31).write_value(1);
+//}
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -64,11 +60,11 @@ async fn main(_spawner: Spawner) {
         
     let mut display = sh1107::SH1107::new(&mut spi_device, dc, rst);
 
-    // Create the display interface
-    //let interface = SPIInterface::new(spi_device, dc);
-    //let mut display = sh1107::SH1107::new(interface, rst);
+    // Set up thermometer
+    //    one_wire_sensors = ds18x20.DS18X20(onewire.OneWire(thermometer))
+    //    utime.sleep(0.5)
 
-    
+
     let _ = display.init(&mut delay).await;
     delay.delay_ms(1000).await;
 
@@ -88,11 +84,15 @@ async fn main(_spawner: Spawner) {
     display.show().await;
     delay.delay_ms(10).await;
 
+//    info!("Begin loop logic");
+//    loop {
 
 
 
 
+//    }
     
     info!("Program end");
 }
+
 

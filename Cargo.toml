@@ -6,10 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-portable-atomic = { version = "1.9.0", features = ["critical-section"] }
+portable-atomic = { version = "1.11.0", features = ["critical-section"] }
 embedded-hal = "1.0.0"
 embedded-hal-async = "1.0.0"
-embedded-hal-bus = { version = "0.2.0", features = ["async"]}
+embedded-hal-bus = { version = "0.3.0", features = ["async"]}
 display-interface = "^ 0.5"
 display-interface-spi = "0.5.0"
 display-interface-i2c = "0.5.0"
@@ -18,6 +18,7 @@ embedded-graphics-framebuf = { version = "0.5.0" }
 #embedded-graphics-core = { version = "0.4.0", optional = true}
 #oled_async = { version = "0.1.0-alpha1" }
 #sh1107 = { version = "0.1.0" }
+#ds18b20 = { version = "0.1.1" } 
 
 # Low-level access to Cortex-M processors
 cortex-m = { version = "0.7.7", features = ["inline-asm", "critical-section"]}
@@ -25,26 +26,26 @@ cortex-m = { version = "0.7.7", features = ["inline-asm", "critical-section"]}
 cortex-m-rt = "0.7.5"
 
 # Logging framework for embedded systems
-defmt = "0.3.0"
+defmt = "0.3.10"
 # Logging for real-time transfer of data between the microcontroller and the host
 defmt-rtt = "0.4.0"
 # Provides a panic handler to log messages using defmt
 panic-probe = { version = "0.3.0", features = ["print-defmt"] }
 
 # Implements embedded-hal traits for Embassy async runtime
-embassy-embedded-hal = { version = "0.2.0", features = ["defmt"] }
+embassy-embedded-hal = { version = "0.3.0", features = ["defmt"] }
 # An async executor for embedded systems
-embassy-executor = { version = "0.6.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt", "integrated-timers", "task-arena-size-32768"] }
+embassy-executor = { version = "0.7.0", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt", "task-arena-size-32768"] }
 # Provides utilities for working with futures
 embassy-futures = { version = "0.1.0" }
 # Provides synchronization primatives for the Embassy async runtime
-embassy-sync = { version = "0.6.0", features = ["defmt"] }
+embassy-sync = { version = "0.6.2", features = ["defmt"] }
 # Manages time related tasks for the Embassy async runtime
-embassy-time = { version = "0.3.0", features = ["defmt", "defmt-timestamp-uptime"] }
+embassy-time = { version = "0.4.0", features = ["defmt", "defmt-timestamp-uptime"] }
 
 # Provides board specific support for Raspberry Pi Pico (RP2040)
 # embassy-rp version 0.2.0 gives error: "linking with `rust-lld` failed: exit code: 1"
-embassy-rp = { version = "0.1.0", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
+embassy-rp = { version = "0.3.1", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
 
 # Procedural macro for generating PIO (Programmable Input / Output) programs for the RP2040
 #pio-proc = "0.2.2"
