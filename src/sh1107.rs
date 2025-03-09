@@ -1,7 +1,7 @@
 use embedded_hal::spi::SpiDevice;
 use embedded_hal_async::delay::DelayNs;
 use embedded_hal::digital::OutputPin;
-use display_interface::{DisplayError, AsyncWriteOnlyDataCommand, DataFormat};
+use display_interface::DisplayError;
 //use display_interface_spi::SPIInterface;
 //use display_interface_i2c::I2CInterface;
 use embedded_graphics::prelude::*;
