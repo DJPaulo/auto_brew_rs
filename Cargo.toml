@@ -20,6 +20,7 @@ embedded-graphics-framebuf = { version = "0.5.0" }
 #sh1107 = { version = "0.1.0" }
 #ds18b20 = { version = "0.1.1" }
 #one-wire-bus = { version = "0.1.1" }
+static_cell = { version = "2.1.0" }
 
 # Low-level access to Cortex-M processors
 cortex-m = { version = "0.7.7", features = ["inline-asm", "critical-section"]}
@@ -27,11 +28,11 @@ cortex-m = { version = "0.7.7", features = ["inline-asm", "critical-section"]}
 cortex-m-rt = "0.7.5"
 
 # Logging framework for embedded systems
-defmt = "0.3.10"
+defmt = "1.0.1"
 # Logging for real-time transfer of data between the microcontroller and the host
-defmt-rtt = "0.4.0"
+defmt-rtt = "1.0.0"
 # Provides a panic handler to log messages using defmt
-panic-probe = { version = "0.3.0", features = ["print-defmt"] }
+panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 
 # Implements embedded-hal traits for Embassy async runtime
 embassy-embedded-hal = { version = "0.3.0", features = ["defmt"] }
@@ -46,7 +47,7 @@ embassy-time = { version = "0.4.0", features = ["defmt", "defmt-timestamp-uptime
 
 # Provides board specific support for Raspberry Pi Pico (RP2040)
 # embassy-rp version 0.2.0 gives error: "linking with `rust-lld` failed: exit code: 1"
-embassy-rp = { version = "0.3.1", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
+embassy-rp = { version = "0.4.0", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
 
 # Procedural macro for generating PIO (Programmable Input / Output) programs for the RP2040
 #pio-proc = "0.2.2"
