@@ -1,40 +1,41 @@
 #![no_std]
 #![no_main]
 
+//use auto_brew_rs::display::DisplayDriver;
 use defmt::*;
 
 use embedded_hal_async::delay::DelayNs;
-use embedded_hal_async::spi::{SpiBus, SpiDevice};
-use embedded_hal_bus::spi::ExclusiveDevice;
+//use embedded_hal_async::spi::{SpiBus, SpiDevice};
+//use embedded_hal_bus::spi::ExclusiveDevice;
 
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::interrupt;
+//use embassy_rp::interrupt;
 use embassy_rp::peripherals::PIO0;
-use embassy_rp::pio::{self, InterruptHandler, Pio};
+use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pio_programs::onewire::{PioOneWire, PioOneWireProgram};
-use embassy_time::{Delay, Duration, Instant, Timer};
+use embassy_time::{Delay, Instant, Timer};
 //use embassy_rp::i2c::InterruptHandler;
-use embassy_rp::spi::{Config, Phase, Polarity, Spi};
+//use embassy_rp::spi::{Config, Phase, Polarity, Spi};
 //use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 //use embassy_sync::mutex::Mutex;
 use static_cell::StaticCell;
 
-use display_interface::{AsyncWriteOnlyDataCommand, DisplayError};
-use display_interface_spi::SPIInterface;
+//use display_interface::{AsyncWriteOnlyDataCommand, DisplayError};
+//use display_interface_spi::SPIInterface;
 
-use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
-use embedded_graphics::pixelcolor::BinaryColor;
-use embedded_graphics::prelude::*;
-use embedded_graphics::text::{Text, TextStyleBuilder};
+//use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
+//use embedded_graphics::pixelcolor::BinaryColor;
+//use embedded_graphics::prelude::*;
+//use embedded_graphics::text::{Text, TextStyleBuilder};
 
 //use ds18b20;
 
 //use gpio::{Level, Output};
 use {defmt_rtt as _, panic_probe as _};
 
-use auto_brew_rs::{adjustment, controls, sensor::Ds18b20, sh1107};
+use auto_brew_rs::{display::*, sensor::Ds18b20};
 
 // static variables
 static LAST_UPDATE: StaticCell<Instant> = StaticCell::new(); // The last time the temp was checked
@@ -64,6 +65,10 @@ const KP: f32 = 10.0;                       // Proportional term - Basic steerin
 const KI: f32 = 0.01;                       // Integral term - Compensate for heat loss by vessel
 const KD: f32 = 150.0;                      // 
 
+// display peripherals
+static DISPLAY_PERIPHERALS: StaticCell<DisplayPeripherals> = StaticCell::new();
+
+
 //#[cortex_m_rt::pre_init]
 //unsafe fn before_main() {
 // Soft-reset doesn't clear spinlocks. Clear the one used by critical-section
@@ -80,70 +85,31 @@ async fn initialise_times() {
     LAST_DISPLAY.init(Instant::now());
 }
 
-/*
-async fn reset_last_update_time() {
-    let mut last_update_time = LAST_UPDATE.lock().await;
-    *last_update_time = Some(Instant::now());
-}
-
-async fn reset_last_display_time() {
-    let mut last_display_time = LAST_DISPLAY.lock().await;
-    *last_display_time = Some(Instant::now());
-}
-
-async fn get_last_update_elapsed_time() -> Option<Duration> {
-    let last_update_time = LAST_UPDATE.lock().await;
-    if let Some(update) = *last_update_time {
-        Some(Instant::now() - update)
-    } else {
-        None
-    }
-}
-
-async fn get_last_display_elapsed_time() -> Option<Duration> {
-    let last_display_time = LAST_DISPLAY.lock().await;
-    if let Some(display) = *last_display_time {
-        Some(Instant::now() - display)
-    } else {
-        None
-    }
-}
-
-
-// Generic function to reset a given `Mutex<Option<Instant>>`
-async fn reset_time(scell: &'static StaticCell<Option<Instant>>) {
-    scell.init(Some(Instant::now()));
-}
-
-// Generic function to get the elapsed time for a given `Mutex<Option<Instant>>`
-async fn get_elapsed_time(scell: &'static StaticCell<Option<Instant>>) -> Option<Duration> {
-    if let Some(start) = scell.as_ref() {
-        Some(Instant::now() - start)
-    } else {
-        None
-    }
-}
-*/
-// Reset the last update time
-//reset_time(&LAST_UPDATE).await;
-
-//if let Some(elapsed) = get_elapsed_time(&LAST_UPDATE).await {
-//    println!("Elapsed time since last update: {:?}", elapsed);
-//}
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     info!("Program start");
-    let peripherals = embassy_rp::init(Default::default());
+    let mut peripherals = embassy_rp::init(Default::default());
     let mut delay = Delay;
-    let del = Delay;
-
+    //let del = Delay;
+/*
     // Display pins
     let dc = Output::new(peripherals.PIN_8, Level::Low); // Data/Command
     let cs = Output::new(peripherals.PIN_9, Level::High); // Chip Select
     let sclk = peripherals.PIN_10; // Serial Clock
     let mosi = peripherals.PIN_11; // Master Out Slave In
     let rst = Output::new(peripherals.PIN_12, Level::Low); // Reset
+*/
+    let mut display_peripherals = DisplayPeripherals {
+        dc: Output::new(&mut peripherals.PIN_8, Level::Low), // Data/Command
+        cs: Output::new(&mut peripherals.PIN_9, Level::High), // Chip Select
+        sclk: &mut peripherals.PIN_10, // Serial Clock
+        mosi: &mut peripherals.PIN_11, // Master Out Slave In
+        rst: Output::new(&mut peripherals.PIN_12, Level::Low), // Reset
+        inner: &mut peripherals.SPI1,
+        tx_dma: &mut peripherals.DMA_CH0,
+    };
+
 
     // Thermometer pins
     let mut pio = Pio::new(peripherals.PIO0, Irqs);
@@ -166,6 +132,7 @@ async fn main(_spawner: Spawner) {
     }
     Timer::after_secs(1).await;
 
+/*
     let mut spi_config = Config::default();
     spi_config.frequency = 2_000_000;
     spi_config.phase = Phase::CaptureOnSecondTransition;
@@ -181,11 +148,16 @@ async fn main(_spawner: Spawner) {
     let mut spi_device = ExclusiveDevice::new(spi, cs, del).unwrap();
 
     let mut display = sh1107::SH1107::new(&mut spi_device, dc, rst);
+*/
+    let mut display = Display::new(&mut display_peripherals);
 
     // Set up thermometer
     //
     //
+    let _ = display.init(&mut delay).await;
+    delay.delay_ms(1000).await;
 
+/*
     let _ = display.init(&mut delay).await;
     delay.delay_ms(1000).await;
 
@@ -210,7 +182,7 @@ async fn main(_spawner: Spawner) {
     let _ = display.clear().await;
     let _ = display.show().await;
     delay.delay_ms(10).await;
-
+*/
     //    info!("Begin loop logic");
     //    loop {
 
