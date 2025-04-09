@@ -66,7 +66,7 @@ const KI: f32 = 0.01;                       // Integral term - Compensate for he
 const KD: f32 = 150.0;                      // 
 
 // display peripherals
-static DISPLAY_PERIPHERALS: StaticCell<DisplayPeripherals> = StaticCell::new();
+//static DISPLAY_PERIPHERALS: StaticCell<DisplayPeripherals> = StaticCell::new();
 
 
 //#[cortex_m_rt::pre_init]
@@ -100,16 +100,15 @@ async fn main(_spawner: Spawner) {
     let mosi = peripherals.PIN_11; // Master Out Slave In
     let rst = Output::new(peripherals.PIN_12, Level::Low); // Reset
 */
-    let mut display_peripherals = DisplayPeripherals {
-        dc: Output::new(&mut peripherals.PIN_8, Level::Low), // Data/Command
-        cs: Output::new(&mut peripherals.PIN_9, Level::High), // Chip Select
-        sclk: &mut peripherals.PIN_10, // Serial Clock
-        mosi: &mut peripherals.PIN_11, // Master Out Slave In
-        rst: Output::new(&mut peripherals.PIN_12, Level::Low), // Reset
-        inner: &mut peripherals.SPI1,
-        tx_dma: &mut peripherals.DMA_CH0,
-    };
-
+    let display_peripherals = DisplayPeripherals::new(
+        Output::new(peripherals.PIN_8, Level::Low),  // Data/Command
+        Output::new(peripherals.PIN_9, Level::High), // Chip Select
+        Output::new(peripherals.PIN_12, Level::Low), // Reset
+        peripherals.PIN_10,     // Serial Clock
+        peripherals.PIN_11,     // Master Out Slave In
+        peripherals.SPI1,       // SPI peripheral
+        peripherals.DMA_CH0,    // DMA channel
+    );
 
     // Thermometer pins
     let mut pio = Pio::new(peripherals.PIO0, Irqs);
@@ -149,12 +148,12 @@ async fn main(_spawner: Spawner) {
 
     let mut display = sh1107::SH1107::new(&mut spi_device, dc, rst);
 */
-    let mut display = Display::new(&mut display_peripherals);
+    let mut display = Display::new(display_peripherals);
 
     // Set up thermometer
     //
     //
-    let _ = display.init(&mut delay).await;
+    let _ = display.initialise().await;
     delay.delay_ms(1000).await;
 
 /*
