@@ -1,59 +1,158 @@
-//use crate::{DISPLAY_TIMEOUT};
 
-//use display_interface::{AsyncWriteOnlyDataCommand, DataFormat, DisplayError};
-
-//use crate::display_driver::builder;
-//use crate::display_driver::sh1107;
-use embassy_rp::spi::{Config, Phase, Polarity, Spi};
-use embassy_rp::gpio::{Level, Output};
-use embassy_time::{Timer, Delay};
-use embedded_hal::digital::OutputPin;
+//use embedded_hal::spi::SpiDevice;
+//use embassy_embedded_hal::shared_bus::asynch::spi::{SpiDevice, SpiDeviceWithConfig};
+//use embassy_embedded_hal::shared_bus::blocking::spi::SpiDevice;
 //use embedded_hal_async::delay::DelayNs;
-use embedded_hal_async::spi::SpiDevice;
+//use embedded_hal_async::spi::{SpiBus, SpiDevice};
+//use embedded_hal::spi::{Operation, SpiBus, SpiDevice};
 use embedded_hal_bus::spi::ExclusiveDevice;
-use display_interface::DisplayError;
+//use embassy_rp::PeripheralRef;
+use embassy_rp::peripherals::{DMA_CH0, PIN_10, PIN_11, SPI1};
+use embassy_rp::spi::{Async, Config, Spi};
+use embassy_rp::gpio::Output;
+use embassy_time::{Delay, Duration, Timer};
 
-//use embassy_rp::Peripheral;
-use crate::sh1107;
+//use static_cell::StaticCell;
+use embedded_graphics::prelude::*;
+use embedded_graphics::pixelcolor::BinaryColor;
 
-#[derive(Debug, Clone, Copy)]
-pub struct Display {
-    //driver: sh1107::SH1107,
+use crate::sh1107::SH1107;
+
+pub struct DisplayPeripherals<'a, CLK, MOSI, SPI, DMA> {
+    pub dc: Output<'a>,
+    pub cs: Output<'a>,
+    pub rst: Output<'a>,
+    pub sclk: CLK,
+    pub mosi: MOSI,
+    pub inner: SPI,
+    pub tx_dma: DMA,
 }
 
-impl Display {
-
-    pub async fn new() -> Self {
+impl<'a, CLK, MOSI, SPI, DMA> DisplayPeripherals<'a, CLK, MOSI, SPI, DMA> {
+    pub fn new(
+        dc: Output<'a>,
+        cs: Output<'a>,
+        rst: Output<'a>,
+        sclk: CLK,
+        mosi: MOSI,
+        inner: SPI,
+        tx_dma: DMA,
+    ) -> Self {
         Self {
-      //      driver: sh1107::SH1107,
-         }
+            dc,
+            cs,
+            rst,
+            sclk,
+            mosi,
+            inner,
+            tx_dma,
+        }
     }
+}
+
+pub struct Display<'a> {
+    display: SH1107<
+        ExclusiveDevice<Spi<'a, SPI1, Async>, Output<'a>, Delay>,
+        Output<'a>,
+        Output<'a>
+    >,
+    delay: Delay,
+}
+
+//static SPI_DEVICE: StaticCell<ExclusiveDevice<Spi<SPI1, Async>, embassy_rp::gpio::Output<>, embassy_time::Delay>> = StaticCell::new();
+
+impl<'a> Display<'a> {
+    pub fn new<CLK, MOSI, SPI, DMA>(
+        display_peripherals: DisplayPeripherals<'a, CLK, MOSI, SPI, DMA>
+    ) -> Self
+    where
+        CLK: embassy_rp::Peripheral + 'a,
+        CLK::P: embassy_rp::spi::ClkPin<SPI1>,
+        MOSI: embassy_rp::Peripheral + 'a,
+        MOSI::P: embassy_rp::spi::MosiPin<SPI1>,
+        SPI: embassy_rp::Peripheral<P = SPI1> + 'a,
+        DMA: embassy_rp::Peripheral<P = DMA_CH0> + 'a,
+    {
+        let delay = Delay;
+        let DisplayPeripherals {
+            dc,
+            cs,
+            rst,
+            sclk,
+            mosi,
+            inner,
+            tx_dma,
+        } = display_peripherals;
 
 
-    pub async fn init() -> Result<(), DisplayError> {
-        let peripherals = embassy_rp::init(Default::default());
-        let mut delay = Delay;
-        //let mut del = Delay;
-
-        let dc = Output::new(peripherals.PIN_8, Level::Low);     // Data/Command
-        let cs = Output::new(peripherals.PIN_9, Level::High);    // Chip Select
-        let sclk = peripherals.PIN_10;                                      // Serial Clock
-        let mosi = peripherals.PIN_11;                                      // Master Out Slave In
-        let rst = Output::new(peripherals.PIN_12, Level::Low);  // Reset
-
+        // SPI configuration
         let mut spi_config = Config::default();
         spi_config.frequency = 2_000_000;
-        spi_config.phase = Phase::CaptureOnSecondTransition;
-        spi_config.polarity = Polarity::IdleHigh;
+        spi_config.phase = embassy_rp::spi::Phase::CaptureOnSecondTransition;
+        spi_config.polarity = embassy_rp::spi::Polarity::IdleHigh;
 
-        let spi = Spi::new_txonly(peripherals.SPI1, sclk, mosi, peripherals.DMA_CH0, spi_config);
-        let mut spi_device = ExclusiveDevice::new(spi, cs, delay).unwrap();
-            
-        let mut display = sh1107::SH1107::new(&mut spi_device, dc, rst);
-        Ok(())
-        // display.init(&mut delay).await?;
-        //Ok()
+        let spi_device = ExclusiveDevice::new(
+                Spi::new_txonly(
+                    inner,
+                    sclk,
+                    mosi,
+                    tx_dma,
+                    spi_config
+                ),
+                cs,
+                delay.clone()
+            ).unwrap();
 
+        // Initialize the display 
+        let display = SH1107::new(
+            spi_device,
+            dc,
+            rst,
+        );
+        /*
+        let display = SH1107::new(
+            spi_device,
+            display_peripherals.dc,
+            display_peripherals.rst
+        );
+        */
+        
+        Self {
+            //display_peripherals,
+            display,
+            delay,
+        }
     }
 
+    pub async fn initialise(&mut self) {
+        self.display.init(&mut self.delay).await.unwrap();
+    }
+
+    pub async fn clear(&mut self) {
+        self.display.clear().await;
+        self.display.show().await;
+    }
+
+    pub async fn show_splash_screen(&mut self) {
+        self.display
+            .draw_rectangle(Point::new(0, 0), Size::new(128, 64), BinaryColor::On, false)
+            .await;
+        self.display
+            .draw_text("   AutoBrew rs ", Point::new(0, 22), BinaryColor::On)
+            .await;
+        self.display
+            .draw_text("     v0.1.0    ", Point::new(0, 40), BinaryColor::On)
+            .await;
+        Timer::after(Duration::from_millis(10)).await;
+        self.display.show().await;
+        Timer::after(Duration::from_millis(5000)).await;
+        self.display.clear().await;
+        self.display.show().await;
+        Timer::after(Duration::from_millis(10)).await;
+    }
+
+    //pub async fn update_display(&mut self) {
+    //    // Logic to update the display
+    //    //println!("Updating display...");
+    //}
 }
