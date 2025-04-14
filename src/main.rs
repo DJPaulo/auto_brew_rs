@@ -40,30 +40,30 @@ use auto_brew_rs::{display::*, sensor::Ds18b20};
 // static variables
 static LAST_UPDATE: StaticCell<Instant> = StaticCell::new(); // The last time the temp was checked
 static LAST_DISPLAY: StaticCell<Instant> = StaticCell::new(); // The last time the display was updated
-static PIN_INTERRUPT: bool = false;         // Indicates that there was an interrupt from a GPIO pin
-static DISPLAY_KEY0_PRESSED: bool = false;  // Indicates if button (key0) was pressed
-static DISPLAY_KEY1_PRESSED: bool = false;  // Indicates if button (key1) was pressed
-static CURRENT_TEMP: f32 = 0.0;             // The current temperature reading
-static NO_DEVICE: bool = false;             // Indicates if no temperature sensor was detected
-static DISPLAY_ON: bool = true;             // Indicates that the display is on
-static RELAY_ON: bool = false;              // Indicates that a relay is on
-static SWITCH_OFF_RELAYS: bool = false;     // Indicates if relays should be switched off
-static TARGET_TEMP: f64 = 19.0;             // Target temperature to maintain (Default = 19 degrees C)
-static INTEGRAL: f64 = 0.0;                 // The calculated integral value
-static LAST_VARIANCE: f64 = 0.0;            // The last calculated variance
+// static PIN_INTERRUPT: bool = false;         // Indicates that there was an interrupt from a GPIO pin
+// static DISPLAY_KEY0_PRESSED: bool = false;  // Indicates if button (key0) was pressed
+// static DISPLAY_KEY1_PRESSED: bool = false;  // Indicates if button (key1) was pressed
+// static CURRENT_TEMP: f32 = 0.0;             // The current temperature reading
+// static NO_DEVICE: bool = false;             // Indicates if no temperature sensor was detected
+// static DISPLAY_ON: bool = true;             // Indicates that the display is on
+// static RELAY_ON: bool = false;              // Indicates that a relay is on
+// static SWITCH_OFF_RELAYS: bool = false;     // Indicates if relays should be switched off
+// static TARGET_TEMP: f64 = 19.0;             // Target temperature to maintain (Default = 19 degrees C)
+// static INTEGRAL: f64 = 0.0;                 // The calculated integral value
+// static LAST_VARIANCE: f64 = 0.0;            // The last calculated variance
 
 // constants
-const OFF: i8 = 0;                          // Value for OFF
-const ON: i8 = 1;                           // Value for ON
-const MIN_TEMP: f32 = 11.0;                 // Minimum selectable temp
-const MAX_TEMP: f32 = 27.0;                 // Maximum selectable temp
-const CHECK_IN: i16 = 300;                   // Temperature check interval (seconds)
-const NO_DEVICE_CHECK_IN: i8 = 60;          // Check interval for when no temperature sensor was detected previously (seconds)
-const DISPLAY_TIMEOUT: i8 = 30;             // Turn off display to avoid burn-in
-const TOLERANCE: f32 = 0.25;                // Allowable variance on either side of the target
-const KP: f32 = 10.0;                       // Proportional term - Basic steering (This is the first parameter you should tune for a particular setup)
-const KI: f32 = 0.01;                       // Integral term - Compensate for heat loss by vessel
-const KD: f32 = 150.0;                      // 
+// const OFF: i8 = 0;                          // Value for OFF
+// const ON: i8 = 1;                           // Value for ON
+// const MIN_TEMP: f32 = 11.0;                 // Minimum selectable temp
+// const MAX_TEMP: f32 = 27.0;                 // Maximum selectable temp
+// const CHECK_IN: i16 = 300;                   // Temperature check interval (seconds)
+// const NO_DEVICE_CHECK_IN: i8 = 60;          // Check interval for when no temperature sensor was detected previously (seconds)
+// const DISPLAY_TIMEOUT: i8 = 30;             // Turn off display to avoid burn-in
+// const TOLERANCE: f32 = 0.25;                // Allowable variance on either side of the target
+// const KP: f32 = 10.0;                       // Proportional term - Basic steering (This is the first parameter you should tune for a particular setup)
+// const KI: f32 = 0.01;                       // Integral term - Compensate for heat loss by vessel
+// const KD: f32 = 150.0;                      // 
 
 // display peripherals
 //static DISPLAY_PERIPHERALS: StaticCell<DisplayPeripherals> = StaticCell::new();
@@ -89,7 +89,7 @@ async fn initialise_times() {
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     info!("Program start");
-    let mut peripherals = embassy_rp::init(Default::default());
+    let peripherals = embassy_rp::init(Default::default());
     let mut delay = Delay;
     //let del = Delay;
 /*
@@ -131,57 +131,20 @@ async fn main(_spawner: Spawner) {
     }
     Timer::after_secs(1).await;
 
-/*
-    let mut spi_config = Config::default();
-    spi_config.frequency = 2_000_000;
-    spi_config.phase = Phase::CaptureOnSecondTransition;
-    spi_config.polarity = Polarity::IdleHigh;
 
-    let spi = Spi::new_txonly(
-        peripherals.SPI1,
-        sclk,
-        mosi,
-        peripherals.DMA_CH0,
-        spi_config,
-    );
-    let mut spi_device = ExclusiveDevice::new(spi, cs, del).unwrap();
-
-    let mut display = sh1107::SH1107::new(&mut spi_device, dc, rst);
-*/
     let mut display = Display::new(display_peripherals);
 
     // Set up thermometer
     //
     //
     let _ = display.initialise().await;
-    delay.delay_ms(1000).await;
-
-/*
-    let _ = display.init(&mut delay).await;
-    delay.delay_ms(1000).await;
+    delay.delay_ms(10).await;
 
     let _ = display.clear().await;
-    let _ = display.show().await;
 
-    let _ = display
-        .draw_rectangle(Point::new(0, 0), Size::new(128, 64), BinaryColor::On, false)
-        .await;
-    //display.show().await;
-    //delay.delay_ms(4000).await;
+    let _ = display.show_splash_screen().await;
 
-    let _ = display
-        .draw_text("   AutoBrew rs ", Point::new(0, 22), BinaryColor::On)
-        .await;
-    let _ = display
-        .draw_text("     v0.1.0    ", Point::new(0, 40), BinaryColor::On)
-        .await;
-    delay.delay_ms(10).await;
-    let _ = display.show().await;
-    delay.delay_ms(5000).await;
-    let _ = display.clear().await;
-    let _ = display.show().await;
-    delay.delay_ms(10).await;
-*/
+
     //    info!("Begin loop logic");
     //    loop {
 

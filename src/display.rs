@@ -10,10 +10,13 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use embassy_rp::peripherals::{DMA_CH0, PIN_10, PIN_11, SPI1};
 use embassy_rp::spi::{Async, Config, Spi};
 use embassy_rp::gpio::Output;
-use embassy_time::Delay;
-use static_cell::StaticCell;
-use crate::sh1107::SH1107;
+use embassy_time::{Delay, Duration, Timer};
 
+//use static_cell::StaticCell;
+use embedded_graphics::prelude::*;
+use embedded_graphics::pixelcolor::BinaryColor;
+
+use crate::sh1107::SH1107;
 
 pub struct DisplayPeripherals<'a, CLK, MOSI, SPI, DMA> {
     pub dc: Output<'a>,
@@ -123,6 +126,29 @@ impl<'a> Display<'a> {
 
     pub async fn initialise(&mut self) {
         self.display.init(&mut self.delay).await.unwrap();
+    }
+
+    pub async fn clear(&mut self) {
+        self.display.clear().await;
+        self.display.show().await;
+    }
+
+    pub async fn show_splash_screen(&mut self) {
+        self.display
+            .draw_rectangle(Point::new(0, 0), Size::new(128, 64), BinaryColor::On, false)
+            .await;
+        self.display
+            .draw_text("   AutoBrew rs ", Point::new(0, 22), BinaryColor::On)
+            .await;
+        self.display
+            .draw_text("     v0.1.0    ", Point::new(0, 40), BinaryColor::On)
+            .await;
+        Timer::after(Duration::from_millis(10)).await;
+        self.display.show().await;
+        Timer::after(Duration::from_millis(5000)).await;
+        self.display.clear().await;
+        self.display.show().await;
+        Timer::after(Duration::from_millis(10)).await;
     }
 
     //pub async fn update_display(&mut self) {

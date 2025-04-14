@@ -41,7 +41,7 @@ where
 
     pub async fn init<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), DisplayError> {
         self.reset(delay).await?;
-        self.off().await;
+        let _ = self.off().await;
         self.send_commands(&[0x00]).await?; // Set lower column address
         self.send_commands(&[0x10]).await?; // Set higher column address
         self.send_commands(&[0xB0]).await?; // Set page address
@@ -58,7 +58,7 @@ where
         self.send_commands(&[0xD9, 0x22]).await?; // Set discharge / precharge period
         self.send_commands(&[0xDB, 0x35]).await?; // Set VCOM deselect level
         self.send_commands(&[0xAD, 0x81]).await?; // Set DC-DC control mode (0x81 = On / 0x80 = Off)
-        self.on().await;
+        let _ = self.on().await;
         delay.delay_ms(10).await;
         Ok(())
     }
