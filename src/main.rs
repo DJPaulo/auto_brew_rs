@@ -26,12 +26,12 @@ static LAST_DISPLAY: StaticCell<Instant> = StaticCell::new(); // The last time t
 // static PIN_INTERRUPT: bool = false;         // Indicates that there was an interrupt from a GPIO pin
 // static DISPLAY_KEY0_PRESSED: bool = false;  // Indicates if button (key0) was pressed
 // static DISPLAY_KEY1_PRESSED: bool = false;  // Indicates if button (key1) was pressed
-// static CURRENT_TEMP: f32 = 0.0;             // The current temperature reading
+static CURRENT_TEMP: StaticCell<f32> = StaticCell::new();             // The current temperature reading
 // static NO_DEVICE: bool = false;             // Indicates if no temperature sensor was detected
 // static DISPLAY_ON: bool = true;             // Indicates that the display is on
 // static RELAY_ON: bool = false;              // Indicates that a relay is on
 // static SWITCH_OFF_RELAYS: bool = false;     // Indicates if relays should be switched off
-// static TARGET_TEMP: f64 = 19.0;             // Target temperature to maintain (Default = 19 degrees C)
+static TARGET_TEMP: f64 = 19.0;             // Target temperature to maintain (Default = 19 degrees C)
 // static INTEGRAL: f64 = 0.0;                 // The calculated integral value
 // static LAST_VARIANCE: f64 = 0.0;            // The last calculated variance
 
@@ -60,9 +60,10 @@ bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
 
-async fn initialise_times() {
+async fn initialise_variables() {
     LAST_UPDATE.init(Instant::now());
     LAST_DISPLAY.init(Instant::now());
+    CURRENT_TEMP.init(0.0);
 }
 
 
@@ -73,7 +74,8 @@ async fn main(_spawner: Spawner) {
     let mut delay = Delay;
     //let del = Delay;
 
-
+    // Set the initial values for the timers
+    initialise_variables().await;
     
 
     // Thermometer pins
@@ -91,7 +93,7 @@ async fn main(_spawner: Spawner) {
     match temp_sensor.temperature().await {
         Ok(temp) => {
             //CURRENT_TEMP = temp;
-            info!("temp = {:?} deg C", temp)
+            info!("temp = {:?} deg C", temp);
         },
         _ => error!("sensor error"),
     }
@@ -112,10 +114,20 @@ async fn main(_spawner: Spawner) {
     delay.delay_ms(10).await;
     let _ = display.show_splash_screen().await;
 
-    // Set the initial values for the timers
-    initialise_times().await;
+    
+    let _ = display.refresh_line_1("stuff").await;
+    let _ = display.refresh_line_2("stuffs").await;
+    let _ = display.refresh_line_3("stuffses").await;
+    let _ = display.refresh_line_4("This are message").await;
+    let _ = display.show().await;
+
+    delay.delay_ms(10000).await;
+    
 
 
+    
+//    delay.delay_ms(4000).await;
+    
     //    info!("Begin loop logic");
     //    loop {
 
