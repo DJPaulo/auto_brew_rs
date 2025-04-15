@@ -1,6 +1,6 @@
 
 use embassy_rp::pio;
-use embassy_rp::pio_programs::onewire::{{PioOneWire, PioOneWireProgram}};
+use embassy_rp::pio_programs::onewire::PioOneWire; //, PioOneWireProgram}};
 
 /// DS18B20 temperature sensor driver
 pub struct Ds18b20<'d, PIO: pio::Instance, const SM: usize> {

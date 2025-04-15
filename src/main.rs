@@ -1,13 +1,9 @@
 #![no_std]
 #![no_main]
 
-//use auto_brew_rs::display::DisplayDriver;
 use defmt::*;
 
 use embedded_hal_async::delay::DelayNs;
-//use embedded_hal_async::spi::{SpiBus, SpiDevice};
-//use embedded_hal_bus::spi::ExclusiveDevice;
-
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
@@ -16,23 +12,10 @@ use embassy_rp::peripherals::PIO0;
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pio_programs::onewire::{PioOneWire, PioOneWireProgram};
 use embassy_time::{Delay, Instant, Timer};
-//use embassy_rp::i2c::InterruptHandler;
-//use embassy_rp::spi::{Config, Phase, Polarity, Spi};
 //use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 //use embassy_sync::mutex::Mutex;
 use static_cell::StaticCell;
 
-//use display_interface::{AsyncWriteOnlyDataCommand, DisplayError};
-//use display_interface_spi::SPIInterface;
-
-//use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
-//use embedded_graphics::pixelcolor::BinaryColor;
-//use embedded_graphics::prelude::*;
-//use embedded_graphics::text::{Text, TextStyleBuilder};
-
-//use ds18b20;
-
-//use gpio::{Level, Output};
 use {defmt_rtt as _, panic_probe as _};
 
 use auto_brew_rs::{display::*, sensor::Ds18b20};
@@ -65,9 +48,6 @@ static LAST_DISPLAY: StaticCell<Instant> = StaticCell::new(); // The last time t
 // const KI: f32 = 0.01;                       // Integral term - Compensate for heat loss by vessel
 // const KD: f32 = 150.0;                      // 
 
-// display peripherals
-//static DISPLAY_PERIPHERALS: StaticCell<DisplayPeripherals> = StaticCell::new();
-
 
 //#[cortex_m_rt::pre_init]
 //unsafe fn before_main() {
@@ -92,23 +72,9 @@ async fn main(_spawner: Spawner) {
     let peripherals = embassy_rp::init(Default::default());
     let mut delay = Delay;
     //let del = Delay;
-/*
-    // Display pins
-    let dc = Output::new(peripherals.PIN_8, Level::Low); // Data/Command
-    let cs = Output::new(peripherals.PIN_9, Level::High); // Chip Select
-    let sclk = peripherals.PIN_10; // Serial Clock
-    let mosi = peripherals.PIN_11; // Master Out Slave In
-    let rst = Output::new(peripherals.PIN_12, Level::Low); // Reset
-*/
-    let display_peripherals = DisplayPeripherals::new(
-        Output::new(peripherals.PIN_8, Level::Low),  // Data/Command
-        Output::new(peripherals.PIN_9, Level::High), // Chip Select
-        Output::new(peripherals.PIN_12, Level::Low), // Reset
-        peripherals.PIN_10,     // Serial Clock
-        peripherals.PIN_11,     // Master Out Slave In
-        peripherals.SPI1,       // SPI peripheral
-        peripherals.DMA_CH0,    // DMA channel
-    );
+
+
+    
 
     // Thermometer pins
     let mut pio = Pio::new(peripherals.PIO0, Irqs);
@@ -116,8 +82,8 @@ async fn main(_spawner: Spawner) {
     let prg = PioOneWireProgram::new(&mut pio.common);
     let onewire = PioOneWire::new(&mut pio.common, pio.sm0, peripherals.PIN_16, &prg);
 
-    initialise_times().await;
 
+    // Set up thermometer
     let mut temp_sensor = Ds18b20::new(onewire);
 
     temp_sensor.start().await; // Start a new measurement
@@ -131,18 +97,23 @@ async fn main(_spawner: Spawner) {
     }
     Timer::after_secs(1).await;
 
-
+    // Initialise the display and show the splash screen
+    let display_peripherals = DisplayPeripherals::new(
+        Output::new(peripherals.PIN_8, Level::Low),  // Data/Command
+        Output::new(peripherals.PIN_9, Level::High), // Chip Select
+        Output::new(peripherals.PIN_12, Level::Low), // Reset
+        peripherals.PIN_10,     // Serial Clock
+        peripherals.PIN_11,     // Master Out Slave In
+        peripherals.SPI1,       // SPI peripheral
+        peripherals.DMA_CH0,    // DMA channel
+    );
     let mut display = Display::new(display_peripherals);
-
-    // Set up thermometer
-    //
-    //
     let _ = display.initialise().await;
     delay.delay_ms(10).await;
-
-    let _ = display.clear().await;
-
     let _ = display.show_splash_screen().await;
+
+    // Set the initial values for the timers
+    initialise_times().await;
 
 
     //    info!("Begin loop logic");
