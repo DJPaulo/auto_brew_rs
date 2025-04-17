@@ -57,6 +57,7 @@ dependencies = [
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-hal-bus",
+ "heapless",
  "panic-probe",
  "portable-atomic",
  "static_cell",
