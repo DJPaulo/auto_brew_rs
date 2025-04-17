@@ -12,8 +12,8 @@ use embassy_rp::peripherals::PIO0;
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pio_programs::onewire::{PioOneWire, PioOneWireProgram};
 use embassy_time::{Delay, Instant, Timer};
-//use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-//use embassy_sync::mutex::Mutex;
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::mutex::Mutex;
 use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
@@ -26,12 +26,12 @@ static LAST_DISPLAY: StaticCell<Instant> = StaticCell::new(); // The last time t
 // static PIN_INTERRUPT: bool = false;         // Indicates that there was an interrupt from a GPIO pin
 // static DISPLAY_KEY0_PRESSED: bool = false;  // Indicates if button (key0) was pressed
 // static DISPLAY_KEY1_PRESSED: bool = false;  // Indicates if button (key1) was pressed
-static CURRENT_TEMP: StaticCell<f32> = StaticCell::new();             // The current temperature reading
+static CURRENT_TEMP: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);             // The current temperature reading
 // static NO_DEVICE: bool = false;             // Indicates if no temperature sensor was detected
 // static DISPLAY_ON: bool = true;             // Indicates that the display is on
 // static RELAY_ON: bool = false;              // Indicates that a relay is on
 // static SWITCH_OFF_RELAYS: bool = false;     // Indicates if relays should be switched off
-static TARGET_TEMP: f64 = 19.0;             // Target temperature to maintain (Default = 19 degrees C)
+//static TARGET_TEMP: f64 = 19.0;             // Target temperature to maintain (Default = 19 degrees C)
 // static INTEGRAL: f64 = 0.0;                 // The calculated integral value
 // static LAST_VARIANCE: f64 = 0.0;            // The last calculated variance
 
@@ -63,7 +63,6 @@ bind_interrupts!(struct Irqs {
 async fn initialise_variables() {
     LAST_UPDATE.init(Instant::now());
     LAST_DISPLAY.init(Instant::now());
-    CURRENT_TEMP.init(0.0);
 }
 
 
@@ -92,8 +91,8 @@ async fn main(_spawner: Spawner) {
     Timer::after_secs(1).await; // Allow 1s for the measurement to finish
     match temp_sensor.temperature().await {
         Ok(temp) => {
-            //CURRENT_TEMP = temp;
-            info!("temp = {:?} deg C", temp);
+            *CURRENT_TEMP.lock().await = temp;
+            info!("temp = {:?} deg C", *CURRENT_TEMP.lock().await);
         },
         _ => error!("sensor error"),
     }

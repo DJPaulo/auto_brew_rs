@@ -6,7 +6,7 @@ pub mod controls;
 pub mod display;
 pub mod sensor;
 pub mod sh1107;
-pub mod sh1107new;
+//pub mod sh1107new;
 
 pub const MIN_SUPPORTED_TEMP: f32 = 11.0; // Minimum selectable temperature
 pub const MAX_SUPPORTED_TEMP: f32 = 27.0; // Maximum selectable temperature

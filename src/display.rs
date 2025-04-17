@@ -1,6 +1,6 @@
-use defmt::Str;
+//use defmt::Str;
 use embedded_hal_bus::spi::ExclusiveDevice;
-use embassy_rp::peripherals::{DMA_CH0, PIN_10, PIN_11, SPI1};
+use embassy_rp::peripherals::{DMA_CH0, SPI1};
 use embassy_rp::spi::{Async, Config, Spi};
 use embassy_rp::gpio::Output;
 use embassy_time::{Delay, Duration, Timer};
@@ -114,45 +114,45 @@ impl<'a> Display<'a> {
     }
 
     pub async fn clear_line_1(&mut self) {
-        self.display.draw_rectangle(Point::new(0, 0), Size::new(128, 16), BinaryColor::Off, true).await;
+        let _ = self.display.draw_rectangle(Point::new(0, 0), Size::new(128, 16), BinaryColor::Off, true).await;
     }
 
     pub async fn clear_line_2(&mut self) {
-        self.display.draw_rectangle(Point::new(0, 16), Size::new(128, 16), BinaryColor::Off, true).await;
+        let _ = self.display.draw_rectangle(Point::new(0, 16), Size::new(128, 16), BinaryColor::Off, true).await;
     }
 
     pub async fn clear_line_3(&mut self) {
-        self.display.draw_rectangle(Point::new(0, 32), Size::new(128, 16), BinaryColor::Off, true).await;
+        let _ = self.display.draw_rectangle(Point::new(0, 32), Size::new(128, 16), BinaryColor::Off, true).await;
     }
 
     pub async fn clear_line_4(&mut self) {
-        self.display.draw_rectangle(Point::new(0, 48), Size::new(128, 16), BinaryColor::Off, true).await;
+        let _ = self.display.draw_rectangle(Point::new(0, 48), Size::new(128, 16), BinaryColor::Off, true).await;
     }
 
     pub async fn refresh_line_1(&mut self, text: &str) {
-        self.clear_line_1().await;
+        let _ = self.clear_line_1().await;
         let display_line = " Current: ";
-        self.display.draw_text(&display_line, Point::new(0, 10), BinaryColor::On).await;
-        self.display.draw_text(text, Point::new(75, 10), BinaryColor::On).await;
+        let _ = self.display.draw_text(display_line, Point::new(0, 10), BinaryColor::On).await;
+        let _ = self.display.draw_text(text, Point::new(75, 10), BinaryColor::On).await;
     }
 
     pub async fn refresh_line_2(&mut self, text: &str) {
-        self.clear_line_2().await;
+        let _ = self.clear_line_2().await;
         let display_line = "  Target: ";
-        self.display.draw_text(&display_line, Point::new(0, 26), BinaryColor::On).await;
-        self.display.draw_text(text, Point::new(75, 26), BinaryColor::On).await;
+        let _ = self.display.draw_text(display_line, Point::new(0, 26), BinaryColor::On).await;
+        let _ = self.display.draw_text(text, Point::new(75, 26), BinaryColor::On).await;
     }
 
     pub async fn refresh_line_3(&mut self, text: &str) {
-        self.clear_line_3().await;
+        let _ = self.clear_line_3().await;
         let display_line = "    Diff: ";
-        self.display.draw_text(&display_line, Point::new(0, 42), BinaryColor::On).await;
-        self.display.draw_text(text, Point::new(75, 42), BinaryColor::On).await;
+        let _ = self.display.draw_text(display_line, Point::new(0, 42), BinaryColor::On).await;
+        let _ = self.display.draw_text(text, Point::new(75, 42), BinaryColor::On).await;
     }
 
     pub async fn refresh_line_4(&mut self, text: &str) {
-        self.clear_line_4().await;
-        self.display.draw_text(text, Point::new(0, 58), BinaryColor::On).await;
+        let _ = self.clear_line_4().await;
+        let _ = self.display.draw_text(text, Point::new(0, 58), BinaryColor::On).await;
     }
 
     pub async fn show(&mut self) {
