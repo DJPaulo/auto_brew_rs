@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
-
-use defmt::*;
-
+use core::fmt::Write;
+use defmt::{error, info};
+use heapless::String;
 use embedded_hal_async::delay::DelayNs;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
@@ -18,22 +18,25 @@ use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
-use auto_brew_rs::{display::*, sensor::Ds18b20};
+use auto_brew_rs::{AutoBrewError, display::*, sensor::*};
 
 // static variables
 static LAST_UPDATE: StaticCell<Instant> = StaticCell::new(); // The last time the temp was checked
 static LAST_DISPLAY: StaticCell<Instant> = StaticCell::new(); // The last time the display was updated
+static NO_DEVICE: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);             // Indicates if no temperature sensor was detected
 // static PIN_INTERRUPT: bool = false;         // Indicates that there was an interrupt from a GPIO pin
 // static DISPLAY_KEY0_PRESSED: bool = false;  // Indicates if button (key0) was pressed
 // static DISPLAY_KEY1_PRESSED: bool = false;  // Indicates if button (key1) was pressed
 static CURRENT_TEMP: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);             // The current temperature reading
-// static NO_DEVICE: bool = false;             // Indicates if no temperature sensor was detected
+static TARGET_TEMP: Mutex<ThreadModeRawMutex, f32> = Mutex::new(19.0);             // Target temperature to maintain (Default = 19 degrees C)
+static LAST_VARIANCE: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);            // The last calculated variance
+
 // static DISPLAY_ON: bool = true;             // Indicates that the display is on
 // static RELAY_ON: bool = false;              // Indicates that a relay is on
 // static SWITCH_OFF_RELAYS: bool = false;     // Indicates if relays should be switched off
-//static TARGET_TEMP: f64 = 19.0;             // Target temperature to maintain (Default = 19 degrees C)
-// static INTEGRAL: f64 = 0.0;                 // The calculated integral value
-// static LAST_VARIANCE: f64 = 0.0;            // The last calculated variance
+
+// static INTEGRAL: f32 = 0.0;                 // The calculated integral value
+
 
 // constants
 // const OFF: i8 = 0;                          // Value for OFF
@@ -65,6 +68,27 @@ async fn initialise_variables() {
     LAST_DISPLAY.init(Instant::now());
 }
 
+async fn set_current_temp(mut temp_sensor: Ds18b20<'_, PIO0, 0>) -> Result<(), AutoBrewError> {
+    temp_sensor.start().await; // Start a new measurement
+    Timer::after_secs(1).await; // Allow 1s for the measurement to finish
+    match temp_sensor.temperature().await {
+        Ok(temp) => {
+            *CURRENT_TEMP.lock().await = temp;
+            info!("temp = {:?} deg C", *CURRENT_TEMP.lock().await);
+            Ok(())
+        },
+        _ => {
+            error!("Sensor not found");
+            Err(AutoBrewError::SensorNotFoundError)
+        }
+    }
+}
+
+fn f32_to_string(value: f32) -> String<16> {
+    let mut string: String<16> = String::new();
+    write!(&mut string, "{}", value);
+    string
+}
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -79,24 +103,22 @@ async fn main(_spawner: Spawner) {
 
     // Thermometer pins
     let mut pio = Pio::new(peripherals.PIO0, Irqs);
-
+    // Set up onewire
     let prg = PioOneWireProgram::new(&mut pio.common);
     let onewire = PioOneWire::new(&mut pio.common, pio.sm0, peripherals.PIN_16, &prg);
-
-
     // Set up thermometer
     let mut temp_sensor = Ds18b20::new(onewire);
+    let _ = temp_sensor.set_resolution(Resolution::Bits12).await; // Set the resolution to 12 bits (0.0625 degrees C)
 
-    temp_sensor.start().await; // Start a new measurement
-    Timer::after_secs(1).await; // Allow 1s for the measurement to finish
-    match temp_sensor.temperature().await {
-        Ok(temp) => {
-            *CURRENT_TEMP.lock().await = temp;
-            info!("temp = {:?} deg C", *CURRENT_TEMP.lock().await);
+
+    match set_current_temp(temp_sensor).await {
+        Err(AutoBrewError::SensorNotFoundError) => {
+            *NO_DEVICE.lock().await = true;
+            error!("Sensor not found");
         },
-        _ => error!("sensor error"),
-    }
-    Timer::after_secs(1).await;
+        Ok(_) => *NO_DEVICE.lock().await = false
+    };
+//    Timer::after_secs(1).await;
 
     // Initialise the display and show the splash screen
     let display_peripherals = DisplayPeripherals::new(
@@ -113,8 +135,8 @@ async fn main(_spawner: Spawner) {
     delay.delay_ms(10).await;
     let _ = display.show_splash_screen().await;
 
-    
-    let _ = display.refresh_line_1("stuff").await;
+    let cur_tmp = f32_to_string(*CURRENT_TEMP.lock().await);
+    let _ = display.refresh_line_1(cur_tmp.as_str()).await;
     let _ = display.refresh_line_2("stuffs").await;
     let _ = display.refresh_line_3("stuffses").await;
     let _ = display.refresh_line_4("This are message").await;
