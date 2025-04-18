@@ -18,18 +18,21 @@ use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
-use auto_brew_rs::{AutoBrewError, display::*, sensor::*};
+use auto_brew_rs::{display::*, sensor::*, AutoBrewError};
 
 // static variables
-static LAST_UPDATE: StaticCell<Instant> = StaticCell::new(); // The last time the temp was checked
-static LAST_DISPLAY: StaticCell<Instant> = StaticCell::new(); // The last time the display was updated
-static NO_DEVICE: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);             // Indicates if no temperature sensor was detected
-// static PIN_INTERRUPT: bool = false;         // Indicates that there was an interrupt from a GPIO pin
-// static DISPLAY_KEY0_PRESSED: bool = false;  // Indicates if button (key0) was pressed
-// static DISPLAY_KEY1_PRESSED: bool = false;  // Indicates if button (key1) was pressed
-static CURRENT_TEMP: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);             // The current temperature reading
-static TARGET_TEMP: Mutex<ThreadModeRawMutex, f32> = Mutex::new(19.0);             // Target temperature to maintain (Default = 19 degrees C)
-static LAST_VARIANCE: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);            // The last calculated variance
+
+static NO_DEVICE: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);              // Indicates if no temperature sensor was detected
+static LAST_UPDATE: StaticCell<Instant> = StaticCell::new();                        // The last time the temp was checked
+static LAST_DISPLAY: StaticCell<Instant> = StaticCell::new();                       // The last time the display was updated
+static CURRENT_TEMP: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);              // The current temperature reading
+static TARGET_TEMP: Mutex<ThreadModeRawMutex, f32> = Mutex::new(19.0);              // Target temperature to maintain (Default = 19 degrees C)
+static CURRENT_VARIANCE: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);          // The current variance
+static LAST_VARIANCE: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);             // The last calculated variance
+static PIN_INTERRUPT: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);          // Indicates that there was an interrupt from a GPIO pin
+static DISPLAY_KEY0_PRESSED: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);   // Indicates if button (key0) was pressed
+static DISPLAY_KEY1_PRESSED: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);   // Indicates if button (key1) was pressed
+
 
 // static DISPLAY_ON: bool = true;             // Indicates that the display is on
 // static RELAY_ON: bool = false;              // Indicates that a relay is on
@@ -63,44 +66,45 @@ bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
 
-async fn initialise_variables() {
+async fn initialise_times() {
     LAST_UPDATE.init(Instant::now());
     LAST_DISPLAY.init(Instant::now());
 }
 
-async fn set_current_temp(mut temp_sensor: Ds18b20<'_, PIO0, 0>) -> Result<(), AutoBrewError> {
+async fn get_current_temp(mut temp_sensor: Ds18b20<'_, PIO0, 0>) -> Result<(f32), AutoBrewError> {
     temp_sensor.start().await; // Start a new measurement
     Timer::after_secs(1).await; // Allow 1s for the measurement to finish
     match temp_sensor.temperature().await {
         Ok(temp) => {
+            *NO_DEVICE.lock().await = false;
             *CURRENT_TEMP.lock().await = temp;
-            info!("temp = {:?} deg C", *CURRENT_TEMP.lock().await);
-            Ok(())
+            *CURRENT_VARIANCE.lock().await = *TARGET_TEMP.lock().await - *CURRENT_TEMP.lock().await;
+            info!("temp = {:?} deg C", temp);   // Debug colsole
+            Ok((temp))
         },
         _ => {
-            error!("Sensor not found");
+            *NO_DEVICE.lock().await = true;
+            error!("Sensor not found");     // Debug console
             Err(AutoBrewError::SensorNotFoundError)
         }
     }
 }
 
+// Convert a f32 value into a string
 fn f32_to_string(value: f32) -> String<16> {
     let mut string: String<16> = String::new();
-    write!(&mut string, "{}", value);
+    let _ = write!(&mut string, "{:.1}", value);
     string
 }
+
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     info!("Program start");
     let peripherals = embassy_rp::init(Default::default());
     let mut delay = Delay;
-    //let del = Delay;
 
-    // Set the initial values for the timers
-    initialise_variables().await;
-    
-
+ 
     // Thermometer pins
     let mut pio = Pio::new(peripherals.PIO0, Irqs);
     // Set up onewire
@@ -111,14 +115,6 @@ async fn main(_spawner: Spawner) {
     let _ = temp_sensor.set_resolution(Resolution::Bits12).await; // Set the resolution to 12 bits (0.0625 degrees C)
 
 
-    match set_current_temp(temp_sensor).await {
-        Err(AutoBrewError::SensorNotFoundError) => {
-            *NO_DEVICE.lock().await = true;
-            error!("Sensor not found");
-        },
-        Ok(_) => *NO_DEVICE.lock().await = false
-    };
-//    Timer::after_secs(1).await;
 
     // Initialise the display and show the splash screen
     let display_peripherals = DisplayPeripherals::new(
@@ -135,24 +131,36 @@ async fn main(_spawner: Spawner) {
     delay.delay_ms(10).await;
     let _ = display.show_splash_screen().await;
 
+
+    let _ = get_current_temp(temp_sensor).await;    // Get a temperature reading
     let cur_tmp = f32_to_string(*CURRENT_TEMP.lock().await);
-    let _ = display.refresh_line_1(cur_tmp.as_str()).await;
-    let _ = display.refresh_line_2("stuffs").await;
-    let _ = display.refresh_line_3("stuffses").await;
-    let _ = display.refresh_line_4("This are message").await;
-    let _ = display.show().await;
+    let tar_tmp = f32_to_string(*TARGET_TEMP.lock().await);
+    let cur_var = f32_to_string(*CURRENT_VARIANCE.lock().await);
+    let mut msg = "";
+    if *NO_DEVICE.lock().await == true {
+        msg = "Sensor not found";
+    }
+    let _ = display.refresh_readings(cur_tmp.as_str(), tar_tmp.as_str(), cur_var.as_str(), msg).await;
+    delay.delay_ms(5000).await; // ** NB ** Remove after testing
 
-    delay.delay_ms(10000).await;
+    initialise_times().await;   // Set the initial values for the timers
     
+    // Main loop
+    info!("Begin loop logic");
+    loop {
+        // Check if a button was pressed
+        if *PIN_INTERRUPT.lock().await == true {
+            
+
+        }
+        else {
+            
 
 
-    
-//    delay.delay_ms(4000).await;
-    
-    //    info!("Begin loop logic");
-    //    loop {
+        }
 
-    //    }
 
-    info!("Program end");
+    }
+
+    //info!("Program end");
 }
