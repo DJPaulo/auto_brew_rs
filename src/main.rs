@@ -6,7 +6,7 @@ use heapless::String;
 use embedded_hal_async::delay::DelayNs;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Level, Output};
+use embassy_rp::gpio::{Level, Output, Input, Pull};
 //use embassy_rp::interrupt;
 use embassy_rp::peripherals::PIO0;
 use embassy_rp::pio::{InterruptHandler, Pio};
@@ -32,9 +32,7 @@ static LAST_VARIANCE: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);         
 static PIN_INTERRUPT: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);          // Indicates that there was an interrupt from a GPIO pin
 static DISPLAY_KEY0_PRESSED: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);   // Indicates if button (key0) was pressed
 static DISPLAY_KEY1_PRESSED: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);   // Indicates if button (key1) was pressed
-
-
-// static DISPLAY_ON: bool = true;             // Indicates that the display is on
+static DISPLAY_ON: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);             // Indicates that the display is on
 // static RELAY_ON: bool = false;              // Indicates that a relay is on
 // static SWITCH_OFF_RELAYS: bool = false;     // Indicates if relays should be switched off
 
@@ -64,6 +62,7 @@ static DISPLAY_KEY1_PRESSED: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false)
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
+    //IO_IRQ_BANK0 => InterruptHandler<IO_BANK0>;
 });
 
 async fn initialise_times() {
@@ -71,7 +70,7 @@ async fn initialise_times() {
     LAST_DISPLAY.init(Instant::now());
 }
 
-async fn get_current_temp(mut temp_sensor: Ds18b20<'_, PIO0, 0>) -> Result<(f32), AutoBrewError> {
+async fn get_current_temp(mut temp_sensor: Ds18b20<'_, PIO0, 0>) -> Result<f32, AutoBrewError> {
     temp_sensor.start().await; // Start a new measurement
     Timer::after_secs(1).await; // Allow 1s for the measurement to finish
     match temp_sensor.temperature().await {
@@ -80,7 +79,7 @@ async fn get_current_temp(mut temp_sensor: Ds18b20<'_, PIO0, 0>) -> Result<(f32)
             *CURRENT_TEMP.lock().await = temp;
             *CURRENT_VARIANCE.lock().await = *TARGET_TEMP.lock().await - *CURRENT_TEMP.lock().await;
             info!("temp = {:?} deg C", temp);   // Debug colsole
-            Ok((temp))
+            Ok(temp)
         },
         _ => {
             *NO_DEVICE.lock().await = true;
@@ -95,6 +94,44 @@ fn f32_to_string(value: f32) -> String<16> {
     let mut string: String<16> = String::new();
     let _ = write!(&mut string, "{:.1}", value);
     string
+}
+
+
+#[embassy_executor::task]
+async fn gpio_task(mut key0: Input<'static>, 
+                  mut key1: Input<'static>) {
+    loop {
+        // Create futures for both buttons
+        let key0_future = key0.wait_for_falling_edge();
+        let key1_future = key1.wait_for_falling_edge();
+
+        if *DISPLAY_ON.lock().await {
+            // Wait for either button to be pressed
+            match embassy_futures::select::select(key0_future, key1_future).await {
+                embassy_futures::select::Either::First(_) => {
+                    // Key0 was pressed
+                    *PIN_INTERRUPT.lock().await = true;
+                    *DISPLAY_KEY0_PRESSED.lock().await = true;
+                    *PIN_INTERRUPT.lock().await = true;
+                    info!("Key0 pressed");
+                }
+                embassy_futures::select::Either::Second(_) => {
+                    // Key1 was pressed
+                    *PIN_INTERRUPT.lock().await = true;
+                    *DISPLAY_KEY1_PRESSED.lock().await = true;
+                    *PIN_INTERRUPT.lock().await = true;
+                    info!("Key1 pressed");
+                }
+            }
+
+        }
+        else {
+            *DISPLAY_ON.lock().await = true;
+        }
+
+        
+        Timer::after_millis(50).await;  // Debounce delay
+    }
 }
 
 
@@ -115,7 +152,6 @@ async fn main(_spawner: Spawner) {
     let _ = temp_sensor.set_resolution(Resolution::Bits12).await; // Set the resolution to 12 bits (0.0625 degrees C)
 
 
-
     // Initialise the display and show the splash screen
     let display_peripherals = DisplayPeripherals::new(
         Output::new(peripherals.PIN_8, Level::Low),  // Data/Command
@@ -131,13 +167,19 @@ async fn main(_spawner: Spawner) {
     delay.delay_ms(10).await;
     let _ = display.show_splash_screen().await;
 
+    // Set up the display's input button pins with pull-up resistors
+    let display_key0 = Input::new(peripherals.PIN_15, Pull::Up);
+    let display_key1 = Input::new(peripherals.PIN_17, Pull::Up);
+
+    // Spawn the GPIO task to handle interrupts
+    _spawner.spawn(gpio_task(display_key0, display_key1)).unwrap();
 
     let _ = get_current_temp(temp_sensor).await;    // Get a temperature reading
     let cur_tmp = f32_to_string(*CURRENT_TEMP.lock().await);
     let tar_tmp = f32_to_string(*TARGET_TEMP.lock().await);
     let cur_var = f32_to_string(*CURRENT_VARIANCE.lock().await);
     let mut msg = "";
-    if *NO_DEVICE.lock().await == true {
+    if *NO_DEVICE.lock().await {
         msg = "Sensor not found";
     }
     let _ = display.refresh_readings(cur_tmp.as_str(), tar_tmp.as_str(), cur_var.as_str(), msg).await;
@@ -149,8 +191,8 @@ async fn main(_spawner: Spawner) {
     info!("Begin loop logic");
     loop {
         // Check if a button was pressed
-        if *PIN_INTERRUPT.lock().await == true {
-            
+        if *PIN_INTERRUPT.lock().await {
+            info!("Button pressed");
 
         }
         else {
@@ -158,7 +200,7 @@ async fn main(_spawner: Spawner) {
 
 
         }
-
+        delay.delay_ms(500).await;
 
     }
 
