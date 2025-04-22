@@ -2,6 +2,8 @@
 #![no_main]
 use core::fmt::Write;
 use defmt::{error, info};
+use embedded_graphics::prelude::RawData;
+use embedded_hal::digital::OutputPin;
 use heapless::String;
 use embedded_hal_async::delay::DelayNs;
 use embassy_executor::Spawner;
@@ -14,7 +16,7 @@ use embassy_rp::pio_programs::onewire::{PioOneWire, PioOneWireProgram};
 use embassy_time::{Delay, Instant, Timer};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
-use static_cell::StaticCell;
+//use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -23,8 +25,10 @@ use auto_brew_rs::{display::*, sensor::*, AutoBrewError};
 // static variables
 
 static NO_DEVICE: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);              // Indicates if no temperature sensor was detected
-static LAST_UPDATE: StaticCell<Instant> = StaticCell::new();                        // The last time the temp was checked
-static LAST_DISPLAY: StaticCell<Instant> = StaticCell::new();                       // The last time the display was updated
+//static LAST_UPDATE: StaticCell<Instant> = StaticCell::new();                        // The last time the temp was checked
+static LAST_UPDATE: Mutex<ThreadModeRawMutex, u64> = Mutex::new(0);                 // The last time the temp was checked
+//static LAST_DISPLAY: StaticCell<Instant> = StaticCell::new();                       // The last time the display was updated
+static LAST_DISPLAY: Mutex<ThreadModeRawMutex, u64> = Mutex::new(0);                // The last time the display was updated
 static CURRENT_TEMP: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);              // The current temperature reading
 static TARGET_TEMP: Mutex<ThreadModeRawMutex, f32> = Mutex::new(19.0);              // Target temperature to maintain (Default = 19 degrees C)
 static CURRENT_VARIANCE: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);          // The current variance
@@ -32,25 +36,24 @@ static LAST_VARIANCE: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);         
 static PIN_INTERRUPT: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);          // Indicates that there was an interrupt from a GPIO pin
 static DISPLAY_KEY0_PRESSED: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);   // Indicates if button (key0) was pressed
 static DISPLAY_KEY1_PRESSED: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);   // Indicates if button (key1) was pressed
-static DISPLAY_ON: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);             // Indicates that the display is on
-// static RELAY_ON: bool = false;              // Indicates that a relay is on
-// static SWITCH_OFF_RELAYS: bool = false;     // Indicates if relays should be switched off
-
-// static INTEGRAL: f32 = 0.0;                 // The calculated integral value
+static DISPLAY_ON: Mutex<ThreadModeRawMutex, bool> = Mutex::new(true);              // Indicates that the display is on
+static RELAY_ON: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);               // Indicates that a relay is on
+static SWITCH_OFF_RELAYS: Mutex<ThreadModeRawMutex, u64> = Mutex::new(0);           // The time that the relays should be switched off at
+static INTEGRAL: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);                  // The calculated integral value
 
 
 // constants
-// const OFF: i8 = 0;                          // Value for OFF
-// const ON: i8 = 1;                           // Value for ON
-// const MIN_TEMP: f32 = 11.0;                 // Minimum selectable temp
-// const MAX_TEMP: f32 = 27.0;                 // Maximum selectable temp
-// const CHECK_IN: i16 = 300;                   // Temperature check interval (seconds)
-// const NO_DEVICE_CHECK_IN: i8 = 60;          // Check interval for when no temperature sensor was detected previously (seconds)
-// const DISPLAY_TIMEOUT: i8 = 30;             // Turn off display to avoid burn-in
-// const TOLERANCE: f32 = 0.25;                // Allowable variance on either side of the target
-// const KP: f32 = 10.0;                       // Proportional term - Basic steering (This is the first parameter you should tune for a particular setup)
-// const KI: f32 = 0.01;                       // Integral term - Compensate for heat loss by vessel
-// const KD: f32 = 150.0;                      // 
+//const OFF: i8 = 0;                          // Value for OFF
+//const ON: i8 = 1;                           // Value for ON
+const MIN_TEMP: f32 = 11.0;                 // Minimum selectable temp
+const MAX_TEMP: f32 = 27.0;                 // Maximum selectable temp
+const CHECK_IN: i16 = 300;                  // Temperature check interval (seconds)
+const NO_DEVICE_CHECK_IN: i8 = 60;          // Check interval for when no temperature sensor was detected previously (seconds)
+const DISPLAY_TIMEOUT: i8 = 30;             // Turn off display to avoid burn-in
+const TOLERANCE: f32 = 0.25;                // Allowable variance on either side of the target
+const KP: f32 = 10.0;                       // Proportional term - Basic steering (This is the first parameter you should tune for a particular setup)
+const KI: f32 = 0.01;                       // Integral term - Compensate for heat loss by vessel
+const KD: f32 = 150.0;                      // Derivative term - Compensate for overshoot (This is the last parameter you should tune for a particular setup)
 
 
 //#[cortex_m_rt::pre_init]
@@ -62,17 +65,17 @@ static DISPLAY_ON: Mutex<ThreadModeRawMutex, bool> = Mutex::new(false);         
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
-    //IO_IRQ_BANK0 => InterruptHandler<IO_BANK0>;
 });
 
 async fn initialise_times() {
-    LAST_UPDATE.init(Instant::now());
-    LAST_DISPLAY.init(Instant::now());
+    *LAST_UPDATE.lock().await = Instant::now().as_secs();
+    *LAST_DISPLAY.lock().await = Instant::now().as_secs();
+    *SWITCH_OFF_RELAYS.lock().await = Instant::now().as_secs();
 }
 
-async fn get_current_temp(mut temp_sensor: Ds18b20<'_, PIO0, 0>) -> Result<f32, AutoBrewError> {
-    temp_sensor.start().await; // Start a new measurement
-    Timer::after_secs(1).await; // Allow 1s for the measurement to finish
+async fn get_current_temp(temp_sensor: &mut Ds18b20<'_, PIO0, 0>) -> Result<f32, AutoBrewError> {
+    temp_sensor.start().await;      // Start a new measurement
+    Timer::after_secs(1).await;     // Allow 1s for the measurement to finish
     match temp_sensor.temperature().await {
         Ok(temp) => {
             *NO_DEVICE.lock().await = false;
@@ -96,10 +99,18 @@ fn f32_to_string(value: f32) -> String<16> {
     string
 }
 
+// Round to the nearest integer value
+fn round(x: f32) -> i32 {
+    if x >= 0.0 {
+        (x + 0.5) as i32
+    } else {
+        (x - 0.5) as i32
+    }
+}
+
 
 #[embassy_executor::task]
-async fn gpio_task(mut key0: Input<'static>, 
-                  mut key1: Input<'static>) {
+async fn gpio_task(mut key0: Input<'static>, mut key1: Input<'static>) {
     loop {
         // Create futures for both buttons
         let key0_future = key0.wait_for_falling_edge();
@@ -108,36 +119,38 @@ async fn gpio_task(mut key0: Input<'static>,
         if *DISPLAY_ON.lock().await {
             // Wait for either button to be pressed
             match embassy_futures::select::select(key0_future, key1_future).await {
+                // Key0 was pressed
                 embassy_futures::select::Either::First(_) => {
-                    // Key0 was pressed
                     *PIN_INTERRUPT.lock().await = true;
                     *DISPLAY_KEY0_PRESSED.lock().await = true;
-                    *PIN_INTERRUPT.lock().await = true;
-                    info!("Key0 pressed");
+                    info!("Key0 pressed");      // Debug colsole
+                    while key0.is_low() {
+                        Timer::after_millis(10).await;  // Wait for the button to be released
+                    }
                 }
+                // Key1 was pressed
                 embassy_futures::select::Either::Second(_) => {
-                    // Key1 was pressed
                     *PIN_INTERRUPT.lock().await = true;
                     *DISPLAY_KEY1_PRESSED.lock().await = true;
-                    *PIN_INTERRUPT.lock().await = true;
-                    info!("Key1 pressed");
+                    info!("Key1 pressed");      // Debug colsole
+                    while key1.is_low() {
+                        Timer::after_millis(10).await;  // Wait for the button to be released
+                    }
                 }
             }
-
         }
         else {
-            *DISPLAY_ON.lock().await = true;
+            *DISPLAY_ON.lock().await = true;    // To wake up the display
         }
-
-        
-        Timer::after_millis(50).await;  // Debounce delay
+        *LAST_DISPLAY.lock().await = Instant::now().as_secs();    // Update last_display time
+        Timer::after_millis(150).await;  // Debounce delay
     }
 }
 
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    info!("Program start");
+    info!("Program start");     // Debug colsole
     let peripherals = embassy_rp::init(Default::default());
     let mut delay = Delay;
 
@@ -174,7 +187,7 @@ async fn main(_spawner: Spawner) {
     // Spawn the GPIO task to handle interrupts
     _spawner.spawn(gpio_task(display_key0, display_key1)).unwrap();
 
-    let _ = get_current_temp(temp_sensor).await;    // Get a temperature reading
+    let _ = get_current_temp(&mut temp_sensor).await;    // Get a temperature reading
     let cur_tmp = f32_to_string(*CURRENT_TEMP.lock().await);
     let tar_tmp = f32_to_string(*TARGET_TEMP.lock().await);
     let cur_var = f32_to_string(*CURRENT_VARIANCE.lock().await);
@@ -185,19 +198,136 @@ async fn main(_spawner: Spawner) {
     let _ = display.refresh_readings(cur_tmp.as_str(), tar_tmp.as_str(), cur_var.as_str(), msg).await;
     delay.delay_ms(5000).await; // ** NB ** Remove after testing
 
+    // Set up the GPIO pins for the heating and cooling relays
+    let mut heating_relay = Output::new(peripherals.PIN_6, Level::Low); // Relay 1 for heating
+    let mut cooling_relay = Output::new(peripherals.PIN_7, Level::Low); // Relay 2 for cooling
+
     initialise_times().await;   // Set the initial values for the timers
     
     // Main loop
-    info!("Begin loop logic");
+    info!("Begin loop logic");      // Debug colsole
     loop {
         // Check if a button was pressed
         if *PIN_INTERRUPT.lock().await {
-            info!("Button pressed");
+            if *DISPLAY_KEY0_PRESSED.lock().await && *NO_DEVICE.lock().await == false {
+                if *TARGET_TEMP.lock().await < MAX_TEMP {
+                    *TARGET_TEMP.lock().await += 0.5;
+                    *CURRENT_VARIANCE.lock().await = *TARGET_TEMP.lock().await - *CURRENT_TEMP.lock().await; // Update the variance
+                    // TODO: Write stored temp
+                }
+                *DISPLAY_KEY0_PRESSED.lock().await = false;     // Turn off the key0 press flag after it has been handled
+            }
+            if *DISPLAY_KEY1_PRESSED.lock().await && *NO_DEVICE.lock().await == false {
+                if *TARGET_TEMP.lock().await > MIN_TEMP {
+                    *TARGET_TEMP.lock().await -= 0.5;
+                    *CURRENT_VARIANCE.lock().await = *TARGET_TEMP.lock().await - *CURRENT_TEMP.lock().await; // Update the variance
+                    // TODO: Write stored temp
+                }
+                *DISPLAY_KEY1_PRESSED.lock().await = false;     // Turn off the key1 press flag after it has been handled
+            }
 
+            if *NO_DEVICE.lock().await {
+                let _ = display.clear_all().await;
+                let _ = display.refresh_line_4("Sensor not found").await;
+                let _ = display.show().await;
+            }
+            else {
+                let cur_tmp = f32_to_string(*CURRENT_TEMP.lock().await);
+                let tar_tmp = f32_to_string(*TARGET_TEMP.lock().await);
+                let cur_var = f32_to_string(*CURRENT_VARIANCE.lock().await);
+                let _ = display.refresh_readings(cur_tmp.as_str(), tar_tmp.as_str(), cur_var.as_str(), "").await;
+            }
+            *PIN_INTERRUPT.lock().await = false;    // Turn off the interrupt flag after it has been handled
         }
         else {
+            let now = Instant::now().as_secs();
+            // Check how long the display has been on for
+            if now >= *LAST_DISPLAY.lock().await + DISPLAY_TIMEOUT as u64 {
+                *DISPLAY_ON.lock().await = false;    // Turn off the display
+                let _ = display.clear_all().await;
+                let _ = display.show().await;
+            }
             
+            // Set the check interval based on whether a device was detected
+            let check_seconds: u64 = match *NO_DEVICE.lock().await {
+                true => NO_DEVICE_CHECK_IN as u64,
+                false => CHECK_IN as u64,
+            };
 
+            // Check if it is time to switch off the relays
+            if *RELAY_ON.lock().await && now >= *SWITCH_OFF_RELAYS.lock().await {
+                // Switch off the relays
+                heating_relay.set_low();
+                cooling_relay.set_low();
+                info!("Relays off");     // Debug colsole
+                *RELAY_ON.lock().await = false;
+                // Clear the messsage line
+                if *DISPLAY_ON.lock().await {
+                    let _ =  display.clear_line_4().await;
+                    let _ =  display.show().await;
+                }
+            }
+
+            let time_diff = now - *LAST_UPDATE.lock().await;
+
+            // Check if it is time to get a new temperature reading
+            if time_diff > check_seconds {
+                let _ = get_current_temp(&mut temp_sensor).await;    // Get a temperature reading
+
+                if *NO_DEVICE.lock().await {
+                    if *DISPLAY_ON.lock().await {
+                       let _ = display.clear_all().await;
+                       let _ = display.refresh_line_4("Sensor not found").await;
+                       let _ = display.show().await;
+                    }
+                }
+                else {
+                    // Display the latest readings
+                    if *DISPLAY_ON.lock().await {
+                        let cur_tmp = f32_to_string(*CURRENT_TEMP.lock().await);
+                        let tar_tmp = f32_to_string(*TARGET_TEMP.lock().await);
+                        let cur_var = f32_to_string(*CURRENT_VARIANCE.lock().await);
+                        let mut msg = "";
+                        let _ = display.refresh_readings(cur_tmp.as_str(), tar_tmp.as_str(), cur_var.as_str(), msg).await;
+                    }
+
+                    if (*CURRENT_VARIANCE.lock().await).abs() > TOLERANCE {
+                        *INTEGRAL.lock().await = *INTEGRAL.lock().await + time_diff as f32 * *CURRENT_VARIANCE.lock().await;
+                        let derivative = (*CURRENT_VARIANCE.lock().await - *LAST_VARIANCE.lock().await) / time_diff as f32;
+                        let output = KP * *CURRENT_VARIANCE.lock().await + KI * *INTEGRAL.lock().await + KD * derivative;
+                        let out = round(output);
+
+                        if out > 0 {
+                            info!("Heating on");     // Debug colsole
+                            if *DISPLAY_ON.lock().await {
+                                let _ = display.refresh_line_4("   HEATING ON   ").await;
+                                let _ = display.show().await;
+                            }
+                            *RELAY_ON.lock().await = true;
+                            *SWITCH_OFF_RELAYS.lock().await = Instant::now().as_secs() + out.abs() as u64;
+                            heating_relay.set_high();
+                        }
+
+                        if out < 0 {
+                            info!("Cooling on");     // Debug colsole
+                            if *DISPLAY_ON.lock().await {
+                                let _ = display.refresh_line_4("   COOLING ON   ").await;
+                                let _ = display.show().await;
+                            }
+                            *RELAY_ON.lock().await = true;
+                            *SWITCH_OFF_RELAYS.lock().await = Instant::now().as_secs() + out.abs() as u64;
+                            cooling_relay.set_high();
+                        }
+
+                    }
+
+                    *LAST_VARIANCE.lock().await = *CURRENT_VARIANCE.lock().await;    // Update the last variance
+                }
+
+                *LAST_UPDATE.lock().await = now;    // Update the last update time
+            }
+            
+             
 
         }
         delay.delay_ms(500).await;
