@@ -3,7 +3,7 @@
 use core::fmt::Write;
 use defmt::{error, info};
 use embedded_graphics::prelude::RawData;
-use embedded_hal::digital::OutputPin;
+//use embedded_hal::digital::OutputPin;
 use heapless::String;
 use embedded_hal_async::delay::DelayNs;
 use embassy_executor::Spawner;
@@ -47,7 +47,7 @@ static INTEGRAL: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);              
 //const ON: i8 = 1;                           // Value for ON
 const MIN_TEMP: f32 = 11.0;                 // Minimum selectable temp
 const MAX_TEMP: f32 = 27.0;                 // Maximum selectable temp
-const CHECK_IN: i16 = 300;                  // Temperature check interval (seconds)
+const CHECK_IN: i16 = 60; //300;                  // Temperature check interval (seconds)
 const NO_DEVICE_CHECK_IN: i8 = 60;          // Check interval for when no temperature sensor was detected previously (seconds)
 const DISPLAY_TIMEOUT: i8 = 30;             // Turn off display to avoid burn-in
 const TOLERANCE: f32 = 0.25;                // Allowable variance on either side of the target
@@ -139,11 +139,8 @@ async fn gpio_task(mut key0: Input<'static>, mut key1: Input<'static>) {
                 }
             }
         }
-        else {
-            *DISPLAY_ON.lock().await = true;    // To wake up the display
-        }
         *LAST_DISPLAY.lock().await = Instant::now().as_secs();    // Update last_display time
-        Timer::after_millis(150).await;  // Debounce delay
+        Timer::after_millis(100).await;  // Debounce delay
     }
 }
 
@@ -210,7 +207,7 @@ async fn main(_spawner: Spawner) {
         // Check if a button was pressed
         if *PIN_INTERRUPT.lock().await {
             if *DISPLAY_KEY0_PRESSED.lock().await && *NO_DEVICE.lock().await == false {
-                if *TARGET_TEMP.lock().await < MAX_TEMP {
+                if *TARGET_TEMP.lock().await < MAX_TEMP && *DISPLAY_ON.lock().await {
                     *TARGET_TEMP.lock().await += 0.5;
                     *CURRENT_VARIANCE.lock().await = *TARGET_TEMP.lock().await - *CURRENT_TEMP.lock().await; // Update the variance
                     // TODO: Write stored temp
@@ -218,14 +215,16 @@ async fn main(_spawner: Spawner) {
                 *DISPLAY_KEY0_PRESSED.lock().await = false;     // Turn off the key0 press flag after it has been handled
             }
             if *DISPLAY_KEY1_PRESSED.lock().await && *NO_DEVICE.lock().await == false {
-                if *TARGET_TEMP.lock().await > MIN_TEMP {
+                if *TARGET_TEMP.lock().await > MIN_TEMP && *DISPLAY_ON.lock().await {
                     *TARGET_TEMP.lock().await -= 0.5;
                     *CURRENT_VARIANCE.lock().await = *TARGET_TEMP.lock().await - *CURRENT_TEMP.lock().await; // Update the variance
                     // TODO: Write stored temp
                 }
                 *DISPLAY_KEY1_PRESSED.lock().await = false;     // Turn off the key1 press flag after it has been handled
             }
-
+            if *DISPLAY_ON.lock().await == false {
+                *DISPLAY_ON.lock().await = true;    // To wake up the display if it was off
+            }
             if *NO_DEVICE.lock().await {
                 let _ = display.clear_all().await;
                 let _ = display.refresh_line_4("Sensor not found").await;
@@ -235,7 +234,10 @@ async fn main(_spawner: Spawner) {
                 let cur_tmp = f32_to_string(*CURRENT_TEMP.lock().await);
                 let tar_tmp = f32_to_string(*TARGET_TEMP.lock().await);
                 let cur_var = f32_to_string(*CURRENT_VARIANCE.lock().await);
-                let _ = display.refresh_readings(cur_tmp.as_str(), tar_tmp.as_str(), cur_var.as_str(), "").await;
+                let mut msg = "";
+                if heating_relay.is_set_high() { msg = "   HEATING ON   "; }
+                if cooling_relay.is_set_high() { msg = "   COOLING ON   "; }
+                let _ = display.refresh_readings(cur_tmp.as_str(), tar_tmp.as_str(), cur_var.as_str(), msg).await;
             }
             *PIN_INTERRUPT.lock().await = false;    // Turn off the interrupt flag after it has been handled
         }
@@ -269,9 +271,10 @@ async fn main(_spawner: Spawner) {
             }
 
             let time_diff = now - *LAST_UPDATE.lock().await;
-
+            info!("Here");     // Debug colsole
             // Check if it is time to get a new temperature reading
             if time_diff > check_seconds {
+                info!("getting new reading");     // Debug colsole
                 let _ = get_current_temp(&mut temp_sensor).await;    // Get a temperature reading
 
                 if *NO_DEVICE.lock().await {
@@ -287,12 +290,14 @@ async fn main(_spawner: Spawner) {
                         let cur_tmp = f32_to_string(*CURRENT_TEMP.lock().await);
                         let tar_tmp = f32_to_string(*TARGET_TEMP.lock().await);
                         let cur_var = f32_to_string(*CURRENT_VARIANCE.lock().await);
-                        let mut msg = "";
+                        let msg = "";
                         let _ = display.refresh_readings(cur_tmp.as_str(), tar_tmp.as_str(), cur_var.as_str(), msg).await;
                     }
-
+                    info!("Then here");     // Debug colsole
                     if (*CURRENT_VARIANCE.lock().await).abs() > TOLERANCE {
-                        *INTEGRAL.lock().await = *INTEGRAL.lock().await + time_diff as f32 * *CURRENT_VARIANCE.lock().await;
+                        let integral = ((time_diff as f32) * *CURRENT_VARIANCE.lock().await) + *INTEGRAL.lock().await;
+                        //*INTEGRAL.lock().await = *INTEGRAL.lock().await + time_diff as f32 * *CURRENT_VARIANCE.lock().await;
+                        *INTEGRAL.lock().await = integral;
                         let derivative = (*CURRENT_VARIANCE.lock().await - *LAST_VARIANCE.lock().await) / time_diff as f32;
                         let output = KP * *CURRENT_VARIANCE.lock().await + KI * *INTEGRAL.lock().await + KD * derivative;
                         let out = round(output);
@@ -320,10 +325,8 @@ async fn main(_spawner: Spawner) {
                         }
 
                     }
-
                     *LAST_VARIANCE.lock().await = *CURRENT_VARIANCE.lock().await;    // Update the last variance
                 }
-
                 *LAST_UPDATE.lock().await = now;    // Update the last update time
             }
             
