@@ -18,3 +18,7 @@ pub const TOLERANCE: f32 = 0.25; // Allowable variance on either side of the tar
 pub const TERM_KP: f32 = 10.0; // Proportional term - Basic steering (This is the first parameter you should tune for a particular setup)
 pub const TERM_KI: f32 = 0.01; // Integral term - Compensate for heat loss by vessel
 pub const TERM_KD: f32 = 150.0; //
+
+pub enum AutoBrewError {
+    SensorNotFoundError,
+}

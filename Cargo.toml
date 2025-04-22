@@ -21,6 +21,7 @@ embedded-graphics-framebuf = { version = "0.5.0" }
 #ds18b20 = { version = "0.1.1" }
 #one-wire-bus = { version = "0.1.1" }
 static_cell = { version = "2.1.0" }
+heapless = { version = "0.8.0" }
 
 # Low-level access to Cortex-M processors
 cortex-m = { version = "0.7.7", features = ["inline-asm", "critical-section"]}

@@ -173,8 +173,17 @@ impl<'a> Display<'a> {
         Timer::after(Duration::from_millis(10)).await;
     }
 
-    //pub async fn update_display(&mut self) {
-    //    // Logic to update the display
-    //    //println!("Updating display...");
-    //}
+    pub async fn refresh_readings(&mut self, cur_tmp: &str, tar_tmp: &str, cur_var: &str, msg: &str) {
+        if msg.len() > 0 {
+            let _ = self.refresh_line_4(msg).await;
+            let _ = self.show().await;
+        }
+        else {
+            let _ = self.refresh_line_1(cur_tmp).await;
+            let _ = self.refresh_line_2(tar_tmp).await;
+            let _ = self.refresh_line_3(cur_var).await;
+            let _ = self.clear_line_4().await;
+            let _ = self.display.show().await;
+        }
+    }
 }
