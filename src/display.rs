@@ -133,21 +133,21 @@ impl<'a> Display<'a> {
         let _ = self.clear_line_1().await;
         let display_line = " Current: ";
         let _ = self.display.draw_text(display_line, Point::new(0, 10), BinaryColor::On).await;
-        let _ = self.display.draw_text(text, Point::new(75, 10), BinaryColor::On).await;
+        let _ = self.display.draw_text(text, Point::new(80, 10), BinaryColor::On).await;
     }
 
     pub async fn refresh_line_2(&mut self, text: &str) {
         let _ = self.clear_line_2().await;
         let display_line = "  Target: ";
         let _ = self.display.draw_text(display_line, Point::new(0, 26), BinaryColor::On).await;
-        let _ = self.display.draw_text(text, Point::new(75, 26), BinaryColor::On).await;
+        let _ = self.display.draw_text(text, Point::new(80, 26), BinaryColor::On).await;
     }
 
     pub async fn refresh_line_3(&mut self, text: &str) {
         let _ = self.clear_line_3().await;
         let display_line = "    Diff: ";
         let _ = self.display.draw_text(display_line, Point::new(0, 42), BinaryColor::On).await;
-        let _ = self.display.draw_text(text, Point::new(75, 42), BinaryColor::On).await;
+        let _ = self.display.draw_text(text, Point::new(80, 42), BinaryColor::On).await;
     }
 
     pub async fn refresh_line_4(&mut self, text: &str) {
@@ -174,16 +174,11 @@ impl<'a> Display<'a> {
     }
 
     pub async fn refresh_readings(&mut self, cur_tmp: &str, tar_tmp: &str, cur_var: &str, msg: &str) {
-        if msg.len() > 0 {
-            let _ = self.refresh_line_4(msg).await;
-            let _ = self.show().await;
-        }
-        else {
             let _ = self.refresh_line_1(cur_tmp).await;
             let _ = self.refresh_line_2(tar_tmp).await;
             let _ = self.refresh_line_3(cur_var).await;
-            let _ = self.clear_line_4().await;
+            let _ = self.refresh_line_4(msg).await;
             let _ = self.display.show().await;
-        }
     }
+
 }
