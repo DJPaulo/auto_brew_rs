@@ -2,7 +2,6 @@
 #![no_main]
 use core::fmt::Write;
 use defmt::{error, info};
-//use embedded_graphics::prelude::RawData;
 use heapless::String;
 use embedded_hal_async::delay::DelayNs;
 use embassy_executor::Spawner;

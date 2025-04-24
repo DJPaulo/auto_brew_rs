@@ -2,13 +2,12 @@ use embedded_hal::spi::SpiDevice;
 use embedded_hal_async::delay::DelayNs;
 use embedded_hal::digital::OutputPin;
 use display_interface::DisplayError;
-//use display_interface_spi::SPIInterface;
-//use display_interface_i2c::I2CInterface;
 use embedded_graphics::prelude::*;
 use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::primitives::{Rectangle, PrimitiveStyleBuilder};
 use embedded_graphics::mono_font::{ascii::FONT_8X13, MonoTextStyle};
 use embedded_graphics::text::Text;
+use embedded_graphics::image::{Image, ImageRaw};
 
 
 #[derive(Debug, Clone, Copy)]
@@ -129,18 +128,6 @@ where
         };
         let rectangle = Rectangle::new(top_left, bottom_right).into_styled(style);
         rectangle.draw(self)?;
-        
-        /*for Pixel(point, colour) in rectangle.pixels() { 
-            let Point { x, y } = point;
-            if x >= 0 && x < WIDTH as i32 && y >= 0 && y < HEIGHT as i32 { 
-                let index = (y as usize * WIDTH as usize + x as usize) / 8;
-                if colour == BinaryColor::On {
-                    self.buffer[index] |= 1 << (x % 8);
-                } else { 
-                    self.buffer[index] &= !(1 << (x % 8));
-                }
-            }
-        }*/
         Ok(())
     }
 
@@ -151,6 +138,19 @@ where
         Ok(())
     }
 
+    pub async fn draw_image(
+        &mut self,
+        image_data: &[u8],
+        width: u32,
+        position: Point
+    ) -> Result<(), DisplayError> {
+        // Create image from raw data
+        let raw = ImageRaw::<BinaryColor>::new(image_data, width);
+        let image = Image::new(&raw, position);
+        // Use embedded-graphics draw trait to render
+        image.draw(self)?;
+        Ok(())
+    }
 
 }
 
