@@ -7,4 +7,4 @@ target = "thumbv6m-none-eabi"        # Cortex-M0 and Cortex-M0+
 [env]
 DEFMT_LOG = "debug"
 WIFI_SSID = "my-pico"              # replace with your own value
-WIFI_PASSWORD = "bhu89ijn"         # same
+WIFI_PASSWORD = "12345678"         # same

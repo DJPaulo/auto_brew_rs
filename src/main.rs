@@ -36,7 +36,7 @@ static INTEGRAL: Mutex<ThreadModeRawMutex, f32> = Mutex::new(0.0);              
 // constants
 const MIN_TEMP: f32 = 11.0;                 // Minimum selectable temp
 const MAX_TEMP: f32 = 27.0;                 // Maximum selectable temp
-const CHECK_IN: i16 = 60;//300;                  // Temperature check interval (seconds)
+const CHECK_IN: i16 = 300;                  // Temperature check interval (seconds)
 const NO_DEVICE_CHECK_IN: i8 = 60;          // Check interval for when no temperature sensor was detected previously (seconds)
 const DISPLAY_TIMEOUT: i8 = 30;             // Turn off display to avoid burn-in
 const TOLERANCE: f32 = 0.25;                // Allowable variance on either side of the target
@@ -94,12 +94,14 @@ fn round(x: f32) -> i32 {
     }
 }
 
+// Save the target temperature to flash memory
 async fn save_target_temp(flash: &mut Flash<'_, FLASH, Async, FLASH_SIZE>, temp: f32) {
     let bytes = temp.to_le_bytes();
     flash.blocking_erase(ADDR_OFFSET, ADDR_OFFSET + ERASE_SIZE as u32).unwrap();
     flash.blocking_write(ADDR_OFFSET, &bytes).unwrap();
 }
 
+// Load the target temperature from flash memory
 async fn load_target_temp(flash: &mut Flash<'_, FLASH, Async, FLASH_SIZE>) -> Option<f32> {
     let mut bytes = [0u8; 4];
     flash.read(ADDR_OFFSET, &mut bytes).await.unwrap();
@@ -207,7 +209,7 @@ async fn main(_spawner: Spawner) {
         let _ = display.refresh_readings(cur_tmp.as_str(), tar_tmp.as_str(), cur_var.as_str(), msg).await;
     }
     
-    delay.delay_ms(5000).await; // ** NB ** Remove after testing
+    //delay.delay_ms(5000).await; // ** NB ** Remove after testing
 
     // Set up the GPIO pins for the heating and cooling relays
     let mut heating_relay = Output::new(peripherals.PIN_6, Level::Low); // Relay 1 for heating
